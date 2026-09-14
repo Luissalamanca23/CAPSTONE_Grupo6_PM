@@ -1,0 +1,56 @@
+{
+  "event_uuid": "fd6eeb9e-7af2-4cf7-a765-472f93bd84fb",
+  "timestamp": "2026-09-10T20:30:01.125Z",
+  "empresa_id": 1,
+  "sucursal_id": 1,
+  "zona_id": 1,
+  "camara_id": 1,
+  "equipo_id": 1,
+  "sesion_uso_id": null,
+  "modelo": {
+    "id": 1,
+    "nombre": "gymkeep-usage-detector",
+    "version": "1.0.0"
+  },
+  "evento": {
+    "tipo": "inicio_uso",
+    "confidence": 0.9472
+  },
+  "detecciones": [
+    {
+      "clase": "persona",
+      "confidence": 0.9621,
+      "bbox": [
+        434,
+        122,
+        681,
+        821
+      ],
+      "track_id": 183
+    },
+    {
+      "clase": "equipo",
+      "confidence": 0.981,
+      "bbox": [
+        710,
+        330,
+        1100,
+        900
+      ],
+      "track_id": 22
+    }
+  ],
+  "tracking": {
+    "persona_track_id": 183,
+    "equipo_track_id": 22,
+    "tiempo_interaccion_segundos": 5.2
+  },
+  "evidencia": {
+    "snapshot_url": "s3://gymkeep-evidencias/eventos/fd6eeb9e.jpg",
+    "clip_url": null
+  },
+  "metadata": {
+    "pipeline": "camera-01",
+    "roi_version": 2
+  }
+}

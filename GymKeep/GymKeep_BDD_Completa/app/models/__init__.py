@@ -1,0 +1,27 @@
+"""Importa todos los modelos para registrarlos en Base.metadata."""
+
+from app.models.gymkeep import (  # noqa: F401
+    Camara,
+    Empresa,
+    Equipo,
+    EstadoCamara,
+    EstadoEmpresa,
+    EstadoEquipo,
+    EstadoIncidencia,
+    EstadoSucursal,
+    EventoIAResumen,
+    Incidencia,
+    Mantenimiento,
+    ModeloIA,
+    OrigenIncidencia,
+    OrigenUso,
+    PrioridadIncidencia,
+    QrEquipo,
+    RegistroAuditoria,
+    SesionUso,
+    Sucursal,
+    TipoEventoIA,
+    TipoFalla,
+    Zona,
+    camara_equipos,
+)

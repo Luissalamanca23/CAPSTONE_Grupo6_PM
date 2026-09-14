@@ -5,12 +5,13 @@ import EquipoDetalle from './pages/EquipoDetalle.jsx'
 import Equipos from './pages/Equipos.jsx'
 import Incidencias from './pages/Incidencias.jsx'
 import Reportar from './pages/Reportar.jsx'
+import Sucursales from './pages/Sucursales.jsx'
 
 export default function App() {
   return (
     <Routes>
-      {/* Pagina publica: a esta ruta apunta el codigo QR pegado en cada maquina. */}
-      <Route path="/reportar/:codigoQr" element={<Reportar />} />
+      {/* Pagina publica: a esta ruta apunta el codigo QR pegado en cada maquina (token del QR). */}
+      <Route path="/reportar/:token" element={<Reportar />} />
 
       {/* Panel de administracion, con menu lateral. */}
       <Route element={<AdminLayout />}>
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/equipos" element={<Equipos />} />
         <Route path="/equipos/:id" element={<EquipoDetalle />} />
         <Route path="/incidencias" element={<Incidencias />} />
+        <Route path="/sucursales" element={<Sucursales />} />
       </Route>
     </Routes>
   )

@@ -67,6 +67,7 @@ export default function Incidencias() {
               <th className="px-5 py-2">Fecha y hora</th>
               <th className="px-5 py-2">Equipo</th>
               <th className="px-5 py-2">Tipo de falla</th>
+              <th className="px-5 py-2">Origen</th>
               <th className="px-5 py-2">Reportado por</th>
               <th className="px-5 py-2">Prioridad</th>
               <th className="px-5 py-2">Estado</th>
@@ -76,12 +77,12 @@ export default function Incidencias() {
           <tbody>
             {cargando && (
               <tr>
-                <td className="px-5 py-4 text-slate-400" colSpan={7}>Cargando...</td>
+                <td className="px-5 py-4 text-slate-400" colSpan={8}>Cargando...</td>
               </tr>
             )}
             {!cargando && incidencias.length === 0 && (
               <tr>
-                <td className="px-5 py-4 text-slate-400" colSpan={7}>
+                <td className="px-5 py-4 text-slate-400" colSpan={8}>
                   No hay incidencias para este filtro.
                 </td>
               </tr>
@@ -93,6 +94,7 @@ export default function Incidencias() {
                 <td className="px-5 py-2">
                   <TipoFallaBadge tipoFalla={incidencia.tipo_falla} />
                 </td>
+                <td className="px-5 py-2 text-xs text-slate-500 uppercase">{incidencia.origen}</td>
                 <td className="px-5 py-2">{incidencia.reportado_por || '—'}</td>
                 <td className="px-5 py-2">
                   <PrioridadBadge prioridad={incidencia.prioridad} />

@@ -1,31 +1,8 @@
-import enum
+"""OBSOLETO: el modelo de equipamiento se movio a app/models/gymkeep.py como parte de la
+integracion con el esquema ampliado (empresa/sucursal/zona, QR como tabla propia). Ver
+GymKeep_BDD_Completa/INTEGRACION_REPO_ACTUAL.md para el detalle del cambio.
 
-from sqlalchemy import Column, DateTime, Enum, Integer, String, func
-from sqlalchemy.orm import relationship
-
-from app.core.database import Base
-
-
-class EstadoEquipo(str, enum.Enum):
-    operativo = "operativo"
-    en_mantenimiento = "en_mantenimiento"
-    fuera_de_servicio = "fuera_de_servicio"
-
-
-class Equipo(Base):
-    """Representa una maquina/activo del gimnasio (ej. cinta de correr, banco de pesas)."""
-
-    __tablename__ = "equipos"
-
-    id = Column(Integer, primary_key=True, index=True)
-    codigo_qr = Column(String(64), unique=True, index=True, nullable=False)
-    nombre = Column(String(120), nullable=False)
-    marca = Column(String(80), nullable=True)
-    modelo = Column(String(80), nullable=True)
-    ubicacion = Column(String(120), nullable=True)
-    estado = Column(Enum(EstadoEquipo), default=EstadoEquipo.operativo, nullable=False)
-    fecha_registro = Column(DateTime(timezone=True), server_default=func.now())
-
-    incidencias = relationship(
-        "Incidencia", back_populates="equipo", cascade="all, delete-orphan"
-    )
+Este archivo se mantiene solo como referencia historica y no se importa desde ningun otro
+modulo (ver app/models/__init__.py). No define clases para evitar registrar tablas
+duplicadas en Base.metadata.
+"""

@@ -1,0 +1,83 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gymkeep_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gymkeep}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gymkeep_password}
+      POSTGRES_DB: ${POSTGRES_DB:-gymkeep}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - gymkeep_postgres_data:/var/lib/postgresql/data
+      - ./postgres/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./postgres/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gymkeep} -d ${POSTGRES_DB:-gymkeep}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mongo:
+    image: mongo:7
+    container_name: gymkeep_mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-gymkeep}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-gymkeep_mongo_password}
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - gymkeep_mongo_data:/data/db
+      - ./mongo/init-mongo.js:/docker-entrypoint-initdb.d/01-init-mongo.js:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "--username",
+          "${MONGO_ROOT_USER:-gymkeep}",
+          "--password",
+          "${MONGO_ROOT_PASSWORD:-gymkeep_mongo_password}",
+          "--authenticationDatabase",
+          "admin",
+          "--eval",
+          "db.adminCommand('ping')"
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: gymkeep_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-gymkeep}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-gymkeep_minio_password}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - gymkeep_minio_data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: gymkeep_minio_init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-gymkeep} ${MINIO_ROOT_PASSWORD:-gymkeep_minio_password};
+      mc mb --ignore-existing local/${S3_BUCKET:-gymkeep-evidencias};
+      exit 0;
+      "
+
+volumes:
+  gymkeep_postgres_data:
+  gymkeep_mongo_data:
+  gymkeep_minio_data:

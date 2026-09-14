@@ -23,12 +23,20 @@ const ICONOS = {
       <path d="M10.3 3.9 2.5 17.5a1.5 1.5 0 0 0 1.3 2.3h16.4a1.5 1.5 0 0 0 1.3-2.3L13.7 3.9a1.5 1.5 0 0 0-2.6 0Z" />
     </svg>
   ),
+  sucursales: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+      <path d="M3 21h18" />
+      <path d="M5 21V7l7-4 7 4v14" />
+      <path d="M9 21v-6h6v6" />
+    </svg>
+  ),
 }
 
 const ENLACES = [
   { to: '/', label: 'Panel', end: true, icono: ICONOS.panel },
   { to: '/equipos', label: 'Equipamiento', icono: ICONOS.equipos },
   { to: '/incidencias', label: 'Incidencias', icono: ICONOS.incidencias },
+  { to: '/sucursales', label: 'Sucursales', icono: ICONOS.sucursales },
 ]
 
 function claseEnlace({ isActive }) {

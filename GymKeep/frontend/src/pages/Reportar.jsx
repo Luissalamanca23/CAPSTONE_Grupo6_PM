@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { api } from '../api/client.js'
 
 export default function Reportar() {
-  const { codigoQr } = useParams()
+  const { token } = useParams()
 
   const [equipo, setEquipo] = useState(null)
   const [tiposFalla, setTiposFalla] = useState([])
@@ -17,14 +17,16 @@ export default function Reportar() {
   const [enviado, setEnviado] = useState(false)
 
   useEffect(() => {
-    Promise.all([api.obtenerEquipoPorQr(codigoQr), api.listarTiposFalla()])
+    // solo_reporte_qr=true: no muestra fallas que solo puede detectar la IA
+    // (ej. movimiento anómalo), esas no tienen sentido en una encuesta manual.
+    Promise.all([api.obtenerEquipoPorQr(token), api.listarTiposFalla(true)])
       .then(([equipoData, tiposData]) => {
         setEquipo(equipoData)
         setTiposFalla(tiposData)
       })
       .catch((err) => setErrorCarga(err.message))
       .finally(() => setCargando(false))
-  }, [codigoQr])
+  }, [token])
 
   async function manejarEnvio(evento) {
     evento.preventDefault()
@@ -34,8 +36,8 @@ export default function Reportar() {
     setErrorEnvio(null)
     try {
       await api.crearIncidenciaPorQr({
-        codigo_qr: codigoQr,
-        tipo_falla: tipoFallaSeleccionado,
+        token,
+        tipo_falla_codigo: tipoFallaSeleccionado,
         reportado_por: nombre.trim(),
       })
       setEnviado(true)
@@ -68,7 +70,7 @@ export default function Reportar() {
             <div className="text-center space-y-2">
               <p className="text-red-600 font-medium">Código QR no válido</p>
               <p className="text-sm text-slate-500">
-                No encontramos una máquina con este código. Pide ayuda al personal del gimnasio.
+                No encontramos una máquina activa con este código. Pide ayuda al personal del gimnasio.
               </p>
             </div>
           )}
@@ -94,7 +96,7 @@ export default function Reportar() {
               <div className="text-center">
                 <p className="text-sm text-slate-500">Estás reportando una falla en:</p>
                 <p className="font-semibold text-slate-900">{equipo.nombre}</p>
-                {equipo.ubicacion && <p className="text-xs text-slate-400">{equipo.ubicacion}</p>}
+                {equipo.zona?.nombre && <p className="text-xs text-slate-400">{equipo.zona.nombre}</p>}
               </div>
 
               <div>
@@ -103,19 +105,19 @@ export default function Reportar() {
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   {tiposFalla.map((tipo) => {
-                    const seleccionado = tipoFallaSeleccionado === tipo.valor
+                    const seleccionado = tipoFallaSeleccionado === tipo.codigo
                     return (
                       <button
                         type="button"
-                        key={tipo.valor}
-                        onClick={() => setTipoFallaSeleccionado(tipo.valor)}
+                        key={tipo.codigo}
+                        onClick={() => setTipoFallaSeleccionado(tipo.codigo)}
                         className={`px-3 py-3 rounded-lg text-sm font-medium border-2 transition-colors ${
                           seleccionado
                             ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
                             : 'border-slate-200 text-slate-600 hover:border-slate-300'
                         }`}
                       >
-                        {tipo.etiqueta}
+                        {tipo.nombre}
                       </button>
                     )
                   })}

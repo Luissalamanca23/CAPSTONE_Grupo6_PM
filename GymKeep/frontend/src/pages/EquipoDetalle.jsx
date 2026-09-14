@@ -12,8 +12,9 @@ export default function EquipoDetalle() {
   const [incidencias, setIncidencias] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
+  const [regenerando, setRegenerando] = useState(false)
 
-  useEffect(() => {
+  function cargar() {
     Promise.all([api.obtenerEquipo(id), api.listarIncidencias({ equipo_id: id })])
       .then(([equipoData, incidenciasData]) => {
         setEquipo(equipoData)
@@ -21,12 +22,28 @@ export default function EquipoDetalle() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setCargando(false))
-  }, [id])
+  }
+
+  useEffect(cargar, [id])
+
+  async function regenerarQr() {
+    setRegenerando(true)
+    setError(null)
+    try {
+      await api.regenerarQr(id)
+      cargar()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRegenerando(false)
+    }
+  }
 
   if (cargando) return <p className="text-slate-500">Cargando...</p>
   if (error) return <p className="text-red-600">{error}</p>
 
-  const enlaceReporte = `${window.location.origin}/reportar/${equipo.codigo_qr}`
+  const token = equipo.qr_activo?.token
+  const enlaceReporte = token ? `${window.location.origin}/reportar/${token}` : null
 
   return (
     <div className="space-y-6">
@@ -40,7 +57,10 @@ export default function EquipoDetalle() {
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 sm:w-72 shrink-0 space-y-4">
           <div>
             <h1 className="text-xl font-bold text-slate-900">{equipo.nombre}</h1>
-            <p className="text-sm text-slate-500">{equipo.ubicacion || 'Sin ubicación registrada'}</p>
+            <p className="text-sm text-slate-500">
+              {equipo.sucursal?.nombre || 'Sin sucursal'}
+              {equipo.zona?.nombre ? ` · ${equipo.zona.nombre}` : ''}
+            </p>
             <div className="mt-2">
               <EstadoBadge estado={equipo.estado} />
             </div>
@@ -48,8 +68,8 @@ export default function EquipoDetalle() {
 
           <dl className="text-sm space-y-1">
             <div className="flex justify-between">
-              <dt className="text-slate-400">Código QR</dt>
-              <dd className="font-mono text-xs">{equipo.codigo_qr}</dd>
+              <dt className="text-slate-400">Código de activo</dt>
+              <dd className="font-mono text-xs">{equipo.codigo_activo}</dd>
             </div>
             {equipo.marca && (
               <div className="flex justify-between">
@@ -66,19 +86,33 @@ export default function EquipoDetalle() {
           </dl>
 
           <div className="border-t border-slate-100 pt-4 text-center space-y-2">
-            <img
-              src={api.urlCodigoQr(equipo.id)}
-              alt={`Código QR de ${equipo.nombre}`}
-              className="mx-auto w-36 h-36 border border-slate-200 rounded-md"
-            />
-            <a
-              href={api.urlCodigoQr(equipo.id)}
-              download={`qr-${equipo.codigo_qr}.png`}
-              className="inline-block text-xs font-medium text-emerald-700 underline"
+            {token ? (
+              <>
+                <img
+                  src={api.urlCodigoQr(equipo.id)}
+                  alt={`Código QR de ${equipo.nombre}`}
+                  className="mx-auto w-36 h-36 border border-slate-200 rounded-md"
+                />
+                <a
+                  href={api.urlCodigoQr(equipo.id)}
+                  download={`qr-${equipo.codigo_activo}.png`}
+                  className="inline-block text-xs font-medium text-emerald-700 underline"
+                >
+                  Descargar QR para imprimir
+                </a>
+                <p className="text-[11px] text-slate-400 break-all">{enlaceReporte}</p>
+              </>
+            ) : (
+              <p className="text-xs text-slate-400">Este equipo no tiene un QR activo.</p>
+            )}
+            <button
+              onClick={regenerarQr}
+              disabled={regenerando}
+              className="text-xs font-medium text-slate-500 underline disabled:opacity-50"
+              title="Invalida el QR actual (por ejemplo si el sticker se perdió o dañó) y emite uno nuevo."
             >
-              Descargar QR para imprimir
-            </a>
-            <p className="text-[11px] text-slate-400 break-all">{enlaceReporte}</p>
+              {regenerando ? 'Generando...' : 'Regenerar QR'}
+            </button>
           </div>
         </div>
 
@@ -91,6 +125,7 @@ export default function EquipoDetalle() {
               <tr>
                 <th className="px-5 py-2">Fecha y hora</th>
                 <th className="px-5 py-2">Tipo de falla</th>
+                <th className="px-5 py-2">Origen</th>
                 <th className="px-5 py-2">Reportado por</th>
                 <th className="px-5 py-2">Prioridad</th>
                 <th className="px-5 py-2">Estado</th>
@@ -99,7 +134,7 @@ export default function EquipoDetalle() {
             <tbody>
               {incidencias.length === 0 && (
                 <tr>
-                  <td className="px-5 py-4 text-slate-400" colSpan={5}>
+                  <td className="px-5 py-4 text-slate-400" colSpan={6}>
                     Esta máquina todavía no tiene incidencias reportadas.
                   </td>
                 </tr>
@@ -110,6 +145,7 @@ export default function EquipoDetalle() {
                   <td className="px-5 py-2">
                     <TipoFallaBadge tipoFalla={incidencia.tipo_falla} />
                   </td>
+                  <td className="px-5 py-2 text-xs text-slate-500 uppercase">{incidencia.origen}</td>
                   <td className="px-5 py-2">{incidencia.reportado_por || '—'}</td>
                   <td className="px-5 py-2">
                     <PrioridadBadge prioridad={incidencia.prioridad} />

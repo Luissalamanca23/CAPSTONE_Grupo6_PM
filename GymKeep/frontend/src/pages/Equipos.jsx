@@ -3,8 +3,15 @@ import { Link } from 'react-router-dom'
 import { api } from '../api/client.js'
 import EstadoBadge from '../components/EstadoBadge.jsx'
 
-const ESTADOS_EQUIPO = ['operativo', 'en_mantenimiento', 'fuera_de_servicio']
-const FORM_INICIAL = { codigo_qr: '', nombre: '', marca: '', modelo: '', ubicacion: '' }
+const ESTADOS_EQUIPO = ['operativo', 'en_mantenimiento', 'fuera_de_servicio', 'retirado']
+const FORM_INICIAL = {
+  sucursal_id: '',
+  zona_id: '',
+  codigo_activo: '',
+  nombre: '',
+  marca: '',
+  modelo: '',
+}
 
 function Campo({ etiqueta, valor, onChange, requerido }) {
   return (
@@ -23,6 +30,8 @@ function Campo({ etiqueta, valor, onChange, requerido }) {
 
 export default function Equipos() {
   const [equipos, setEquipos] = useState([])
+  const [sucursales, setSucursales] = useState([])
+  const [zonas, setZonas] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
   const [form, setForm] = useState(FORM_INICIAL)
@@ -40,13 +49,41 @@ export default function Equipos() {
 
   useEffect(cargarEquipos, [])
 
+  useEffect(() => {
+    api
+      .listarSucursales()
+      .then((datos) => {
+        setSucursales(datos)
+        // Si solo hay una sucursal (caso tipico del Capstone), se preselecciona.
+        if (datos.length > 0) {
+          setForm((f) => (f.sucursal_id ? f : { ...f, sucursal_id: String(datos[0].id) }))
+        }
+      })
+      .catch((err) => setError(err.message))
+  }, [])
+
+  useEffect(() => {
+    if (!form.sucursal_id) {
+      setZonas([])
+      return
+    }
+    api
+      .listarZonas(form.sucursal_id)
+      .then(setZonas)
+      .catch((err) => setError(err.message))
+  }, [form.sucursal_id])
+
   async function manejarEnvio(evento) {
     evento.preventDefault()
     setEnviando(true)
     setError(null)
     try {
-      await api.crearEquipo(form)
-      setForm(FORM_INICIAL)
+      await api.crearEquipo({
+        ...form,
+        sucursal_id: Number(form.sucursal_id),
+        zona_id: form.zona_id ? Number(form.zona_id) : null,
+      })
+      setForm((f) => ({ ...FORM_INICIAL, sucursal_id: f.sucursal_id }))
       setMostrarFormulario(false)
       cargarEquipos()
     } catch (err) {
@@ -71,22 +108,67 @@ export default function Equipos() {
         <h1 className="text-2xl font-bold text-slate-900">Equipamiento</h1>
         <button
           onClick={() => setMostrarFormulario((v) => !v)}
-          className="bg-emerald-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-emerald-700"
+          disabled={sucursales.length === 0}
+          className="bg-emerald-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
         >
           {mostrarFormulario ? 'Cancelar' : '+ Registrar equipo'}
         </button>
       </div>
 
+      {sucursales.length === 0 && !cargando && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-4 py-3">
+          Todavía no hay ninguna sucursal registrada. Crea una en{' '}
+          <Link to="/sucursales" className="underline font-medium">
+            Sucursales
+          </Link>{' '}
+          antes de registrar equipos.
+        </p>
+      )}
+
       {mostrarFormulario && (
         <form
           onSubmit={manejarEnvio}
-          className="bg-white rounded-lg border border-slate-200 shadow-sm p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end"
+          className="bg-white rounded-lg border border-slate-200 shadow-sm p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end"
         >
-          <Campo etiqueta="Código QR" valor={form.codigo_qr} onChange={(v) => setForm({ ...form, codigo_qr: v })} requerido />
+          <label className="text-xs text-slate-500 flex flex-col gap-1">
+            Sucursal
+            <select
+              value={form.sucursal_id}
+              required
+              onChange={(e) => setForm({ ...form, sucursal_id: e.target.value, zona_id: '' })}
+              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm text-slate-900"
+            >
+              {sucursales.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-slate-500 flex flex-col gap-1">
+            Zona (opcional)
+            <select
+              value={form.zona_id}
+              onChange={(e) => setForm({ ...form, zona_id: e.target.value })}
+              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm text-slate-900"
+            >
+              <option value="">Sin zona</option>
+              {zonas.map((z) => (
+                <option key={z.id} value={z.id}>
+                  {z.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Campo
+            etiqueta="Código de activo"
+            valor={form.codigo_activo}
+            onChange={(v) => setForm({ ...form, codigo_activo: v })}
+            requerido
+          />
           <Campo etiqueta="Nombre" valor={form.nombre} onChange={(v) => setForm({ ...form, nombre: v })} requerido />
           <Campo etiqueta="Marca" valor={form.marca} onChange={(v) => setForm({ ...form, marca: v })} />
           <Campo etiqueta="Modelo" valor={form.modelo} onChange={(v) => setForm({ ...form, modelo: v })} />
-          <Campo etiqueta="Ubicación" valor={form.ubicacion} onChange={(v) => setForm({ ...form, ubicacion: v })} />
           <button
             type="submit"
             disabled={enviando}
@@ -105,7 +187,7 @@ export default function Equipos() {
             <tr>
               <th className="px-5 py-2">QR</th>
               <th className="px-5 py-2">Nombre</th>
-              <th className="px-5 py-2">Ubicación</th>
+              <th className="px-5 py-2">Sucursal / zona</th>
               <th className="px-5 py-2">Estado</th>
               <th className="px-5 py-2">Cambiar estado</th>
               <th className="px-5 py-2"></th>
@@ -133,9 +215,12 @@ export default function Equipos() {
                   <Link to={`/equipos/${equipo.id}`} className="font-medium text-slate-900 hover:text-emerald-700">
                     {equipo.nombre}
                   </Link>
-                  <p className="text-xs text-slate-400 font-mono">{equipo.codigo_qr}</p>
+                  <p className="text-xs text-slate-400 font-mono">{equipo.codigo_activo}</p>
                 </td>
-                <td className="px-5 py-2">{equipo.ubicacion || '—'}</td>
+                <td className="px-5 py-2">
+                  {equipo.sucursal?.nombre || '—'}
+                  {equipo.zona?.nombre ? ` · ${equipo.zona.nombre}` : ''}
+                </td>
                 <td className="px-5 py-2">
                   <EstadoBadge estado={equipo.estado} />
                 </td>

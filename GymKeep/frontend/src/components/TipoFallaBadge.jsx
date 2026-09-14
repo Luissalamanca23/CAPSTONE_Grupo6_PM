@@ -1,25 +1,20 @@
+// Colores por codigo del catalogo `tipos_falla` (ver GymKeep_BDD_Completa/postgres/schema.sql).
 const ESTILOS = {
-  desgaste: 'bg-slate-100 text-slate-600',
-  sonido_extrano: 'bg-sky-100 text-sky-700',
-  rota: 'bg-red-100 text-red-700',
-  no_enciende: 'bg-orange-100 text-orange-700',
-  otro: 'bg-slate-100 text-slate-600',
+  DESGASTE: 'bg-slate-100 text-slate-600',
+  SONIDO_EXTRANO: 'bg-sky-100 text-sky-700',
+  ROTA: 'bg-red-100 text-red-700',
+  NO_ENCIENDE: 'bg-orange-100 text-orange-700',
+  MOVIMIENTO_ANOMALO: 'bg-purple-100 text-purple-700',
+  OTRO: 'bg-slate-100 text-slate-600',
 }
 
-const ETIQUETAS = {
-  desgaste: 'Desgaste',
-  sonido_extrano: 'Sonido extraño',
-  rota: 'Rota / no funciona',
-  no_enciende: 'No enciende',
-  otro: 'Otro',
-}
-
+/** tipoFalla: objeto del catalogo ({ codigo, nombre, ... }), como lo devuelve la API. */
 export default function TipoFallaBadge({ tipoFalla }) {
-  const estilo = ESTILOS[tipoFalla] || 'bg-slate-100 text-slate-600'
-  const etiqueta = ETIQUETAS[tipoFalla] || tipoFalla
+  if (!tipoFalla) return <span className="text-slate-400 text-xs">—</span>
+  const estilo = ESTILOS[tipoFalla.codigo] || 'bg-slate-100 text-slate-600'
   return (
     <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${estilo}`}>
-      {etiqueta}
+      {tipoFalla.nombre}
     </span>
   )
 }
