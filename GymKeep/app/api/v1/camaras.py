@@ -14,9 +14,8 @@ router = APIRouter()
 def listar_camaras(
     sucursal_id: Optional[int] = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
 ):
-    """Camaras desplegadas en una sucursal. La deteccion de uso por vision computacional
-    (YOLO/OpenCV) es un modulo futuro; este endpoint solo registra el inventario de camaras
-    y su asociacion a equipos/ROI, dejando la base lista para cuando ese modulo se conecte."""
+    """Camaras desplegadas en una sucursal y su asociacion a equipos. La deteccion de uso
+    la hace el modulo de vision (GymKeep/vision/), que registra sus camaras aqui."""
     return crud_camara.list_camaras(db, sucursal_id=sucursal_id, skip=skip, limit=limit)
 
 

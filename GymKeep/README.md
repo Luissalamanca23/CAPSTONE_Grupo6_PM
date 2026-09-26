@@ -29,8 +29,8 @@ Cambios clave respecto a la version anterior (ver `GymKeep_BDD_Completa/INTEGRAC
   `permite_deteccion_ia`.
 - El equipamiento se registra dentro de una jerarquia `empresa → sucursal → zona`.
 - Se agrega el modelo de camaras/IA (`camaras`, `modelos_ia`, `eventos_ia_resumen`,
-  `sesiones_uso`) y auditoria (`registros_auditoria`), listos para cuando se conecte el
-  modulo de vision por computadora (todavia no implementado en este Capstone).
+  `sesiones_uso`) y auditoria (`registros_auditoria`). El modulo de vision por computadora
+  (`vision/`) ya alimenta `sesiones_uso` a traves de `POST /eventos-ia/`.
 
 ## Que incluye
 
@@ -62,11 +62,13 @@ Cambios clave respecto a la version anterior (ver `GymKeep_BDD_Completa/INTEGRAC
      que, al escanearse, abre el formulario publico de reporte para ese equipo. Pensado
      para imprimir y pegar en la maquina.
    - **Camaras / modelos de IA / eventos de IA**: inventario de camaras y sus modelos,
-     con `POST /eventos-ia/` para recibir eventos del futuro pipeline de vision por
-     computadora (documento completo a MongoDB, resumen consultable en
-     `eventos_ia_resumen`). Todavia no hay un pipeline de IA conectado; este endpoint deja
-     la base lista para cuando exista (puede probarse con el JSON de ejemplo en
-     `GymKeep_BDD_Completa/examples/evento_inicio_uso.json`).
+     con `POST /eventos-ia/` para recibir los eventos del modulo de vision (documento
+     completo a MongoDB, resumen consultable en `eventos_ia_resumen`). Los eventos de uso
+     (`inicio_uso` / `uso_en_curso` / `fin_uso`) se consolidan en `sesiones_uso`, y el
+     endpoint es idempotente por `event_uuid` (reenviar un evento no lo duplica).
+   - **Sesiones de uso / horometro**: `GET /sesiones-uso/` lista las sesiones de uso de
+     cada equipo y `GET /sesiones-uso/horometro` entrega las horas de uso acumuladas por
+     equipo (union de intervalos: dos sesiones solapadas no suman doble).
 2. **Panel Web de gestion** (frontend), con menu lateral:
    - **Panel**: resumen y cola de incidencias ordenada por prioridad.
    - **Equipamiento**: alta de equipos (elige sucursal/zona), miniatura del QR, cambio
@@ -82,6 +84,10 @@ Cambios clave respecto a la version anterior (ver `GymKeep_BDD_Completa/INTEGRAC
    texto: se elige el tipo de falla tocando una opcion (solo se muestran los tipos con
    `permite_reporte_qr = true`), y el **unico campo de texto libre es el nombre** de
    quien reporta.
+4. **Modulo de vision por computadora** (`vision/`, entorno propio): mide el uso y el
+   tiempo de uso de cada maquina desde el video de una camara fija (YOLO26 + ByteTrack +
+   una ROI por maquina + reglas T_on / T_off) y envia los eventos a la API. Ver
+   `vision/README.md`.
 
 ## Stack
 
@@ -102,8 +108,10 @@ GymKeep/
 │   │                                 camara, modelo_ia, ai_event
 │   ├── services/ai_event_service.py  # Puente Postgres <-> MongoDB para eventos de IA
 │   └── api/v1/                     # empresas, sucursales, zonas, equipamiento,
-│                                      incidencias, camaras, modelos_ia, eventos_ia
+│                                      incidencias, camaras, modelos_ia, eventos_ia,
+│                                      sesiones_uso
 ├── tests/
+├── vision/                         # Modulo de vision por computadora (ver vision/README.md)
 ├── frontend/
 │   └── src/
 │       ├── layouts/AdminLayout.jsx        # Menu lateral del panel
@@ -187,10 +195,13 @@ Los tests usan SQLite en memoria (no necesitan Docker/Postgres/Mongo corriendo),
 **si** necesitan que `pymongo` y `boto3` esten instalados (son import de `app.core.mongo`
 / `app.core.storage`, aunque no se conecten de verdad durante los tests).
 
+`pytest.ini` limita esta corrida a `tests/`. El modulo de vision tiene sus propios tests y
+su propio entorno: `cd vision && .venv/bin/python -m pytest` (ver `vision/README.md`).
+
 ## Proximos pasos
 
-- Modulo de vision por computadora (YOLOv8/OpenCV) que produzca los eventos de
-  `POST /eventos-ia/` (ya hay modelo de datos, Mongo y el puente a Postgres listos).
+- Mostrar en el panel las horas de uso y las sesiones de cada equipo (ya expuestas en
+  `GET /sesiones-uso/`), distinguiendo uso medido de estimado.
 - Conectar de verdad MinIO al pipeline de IA (`app/core/storage.py::subir_evidencia`) para
   guardar snapshots/clips de evidencia.
 - Modulo de costos/repuestos y dashboard financiero (Costo Total de Propiedad).
