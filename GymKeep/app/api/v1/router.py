@@ -7,6 +7,7 @@ from app.api.v1 import (
     eventos_ia,
     incidencias,
     modelos_ia,
+    sesiones_uso,
     sucursales,
     zonas,
 )
@@ -20,3 +21,4 @@ api_router.include_router(incidencias.router, prefix="/incidencias", tags=["Inci
 api_router.include_router(camaras.router, prefix="/camaras", tags=["Camaras"])
 api_router.include_router(modelos_ia.router, prefix="/modelos-ia", tags=["Modelos IA"])
 api_router.include_router(eventos_ia.router, prefix="/eventos-ia", tags=["Eventos IA"])
+api_router.include_router(sesiones_uso.router, prefix="/sesiones-uso", tags=["Sesiones de uso"])
