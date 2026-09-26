@@ -1,0 +1,7 @@
+# Modulo de vision de GymKeep (entorno propio, separado del backend).
+# Con GPU NVIDIA, pip instala torch con CUDA automaticamente; sin GPU funciona en CPU.
+ultralytics>=8.4,<9      # YOLO26 + ByteTrack (incluye torch, opencv-python, numpy, matplotlib)
+lap>=0.5                 # asignacion de ByteTrack
+pyyaml>=6
+httpx>=0.27
+pytest>=8
