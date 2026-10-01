@@ -9,9 +9,9 @@ esquema de base de datos, etc.) revisa `README.md` en esta misma carpeta.
 Instala esto antes de partir (una sola vez por computador):
 
 - **Git** — para bajar/subir el código.
-- **Docker Desktop** — corre el backend (API), PostgreSQL, MongoDB y MinIO.
-  Descárgalo en docker.com/products/docker-desktop y déjalo abierto mientras
-  trabajas.
+- **Docker Desktop** — corre el backend (API), PostgreSQL y MongoDB (y, si hace
+  falta, MinIO — ver más abajo). Descárgalo en docker.com/products/docker-desktop
+  y déjalo abierto mientras trabajas.
 - **Node.js 18 o superior** (incluye `npm`) — corre el panel web (frontend).
   Descárgalo en nodejs.org (versión LTS).
 
@@ -37,11 +37,20 @@ git pull origin main
 
 ```bash
 cp .env.example .env
-docker compose up --build
+docker compose up -d --build
 ```
 
-Déjala corriendo. Esto levanta 4 contenedores: PostgreSQL, MongoDB, MinIO y la API.
+Déjala corriendo. Esto levanta **tres contenedores**: PostgreSQL, MongoDB y la API.
 La API queda en `http://localhost:8000/docs`.
+
+> **MinIO ya no se levanta por defecto.** Solo guarda evidencia de cámaras (una
+> función que todavía no está conectada a ningún pipeline de IA real), y tanto
+> Docker Hub como quay.io dejaron de servir sus imágenes de forma anónima, así que
+> intentar levantarlo puede fallar. Quedó detrás de un profile opcional; solo si
+> de verdad necesitas probarlo:
+> ```bash
+> docker compose --profile storage up -d
+> ```
 
 **Frontend** (en otra terminal, desde `GymKeep/frontend`):
 
@@ -53,6 +62,25 @@ npm run dev
 
 Panel en `http://localhost:5173`.
 
+### Datos de ejemplo (opcional)
+
+`postgres/seed.sql` carga solo lo mínimo. Si quieres datos variados para probar
+filtros, paginación y la vista de Costos, hay dos scripts opcionales en
+`postgres/`: `reset_demo_incidencias.sql` y `agregar_mas_datos.sql`. El README
+(sección "Datos de ejemplo") trae los comandos exactos para correrlos, incluyendo
+la diferencia entre PowerShell y cmd/Git Bash (ver nota siguiente).
+
+### Nota si usas PowerShell en Windows
+
+PowerShell **no soporta** `<` para redirigir un archivo a un comando (a diferencia
+de cmd.exe y Git Bash). Si en algún momento necesitas pasar un `.sql` a `psql`
+(por ejemplo los scripts de datos de ejemplo), la forma que sí funciona en
+PowerShell es:
+
+```powershell
+Get-Content archivo.sql -Raw | docker compose exec -T db psql -U gymkeep -d gymkeep
+```
+
 ### Si ya tenías el sistema levantado con la version anterior (antes de la base de datos ampliada)
 
 El esquema de base de datos cambió de forma importante: se agregaron
@@ -62,8 +90,8 @@ columna de `equipos`), y el tipo de falla pasó de ser un valor fijo a un catál
 de actualizar es reiniciar los volúmenes y dejar que se cargue el esquema nuevo:
 
 ```bash
-docker compose down -v   # -v borra los datos de prueba de Postgres/Mongo/MinIO
-docker compose up --build
+docker compose down -v   # -v borra los datos de prueba de Postgres/Mongo
+docker compose up -d --build
 ```
 
 También hay que actualizar las dependencias de Python (se agregaron `pymongo` y
@@ -81,7 +109,7 @@ tome el nuevo esquema (se pierde solo la data de prueba, no el código):
 
 ```bash
 docker compose down -v
-docker compose up --build
+docker compose up -d --build
 ```
 
 Si no estás seguro si hace falta, hazlo igual — no rompe nada.
@@ -119,6 +147,9 @@ Si el cambio es chico (typo, ajuste menor) está bien trabajar directo en
 - Nuevo tipo de falla → se agrega como fila en `postgres/schema.sql` (tabla
   `tipos_falla`, sección de seed), no como código nuevo.
 - Cambios a incidencias → `app/crud/incidencia.py`, `app/api/v1/incidencias.py`.
+- Cambios a mantenimientos/costos → `app/crud/mantenimiento.py`,
+  `app/api/v1/mantenimientos.py`, y en el frontend `frontend/src/pages/Costos.jsx`
+  y `EquipoDetalle.jsx`.
 - Módulo de cámaras/IA (futuro) → `app/models/gymkeep.py` (`Camara`, `ModeloIA`,
   `EventoIAResumen`, `SesionUso`), `app/services/ai_event_service.py`,
   `app/api/v1/camaras.py` / `modelos_ia.py` / `eventos_ia.py`, y las colecciones de
@@ -127,10 +158,11 @@ Si el cambio es chico (typo, ajuste menor) está bien trabajar directo en
 
 ## 5. Qué NO se debe subir a git
 
-Ya está en `.gitignore`, pero por si acaso nunca subas manualmente:
+Ya está en `.gitignore` (si ves alguno de estos como "modified"/"untracked" al
+hacer `git status`, algo está mal configurado — avisa al grupo):
 
 - `node_modules/` (se regenera con `npm install`)
-- `.env` (configuración local de cada uno)
+- `.env` (configuración local de cada uno — usa `.env.example` como plantilla)
 - `__pycache__/`, `*.pyc`
 - Las carpetas de datos de Postgres/Mongo/MinIO (`db_data`, `mongo_data`, `minio_data`)
 
@@ -141,3 +173,18 @@ navegador, F12) y compártelo en el grupo antes de intentar arreglarlo a
 ciegas — la mayoría de los problemas son de configuración (`.env`,
 contenedores no reiniciados, `pip install -r requirements.txt` desactualizado)
 y se resuelven rápido si se ve el error real.
+
+Un error puntual que puede aparecer al hacer `git add`/`commit`/`pull`:
+
+> Another git process seems to be running in this repository... If it still
+> fails, perhaps the process crashed in some way and left behind a stale `.git/index.lock`
+
+Esto significa que quedó un archivo `.git/index.lock` huérfano (de un git que se
+cerró mal, por ejemplo al cerrar la terminal a medio commit). Se soluciona
+borrando ese archivo — **nunca mientras tengas otro git corriendo de verdad**:
+
+```bash
+rm .git/index.lock
+```
+
+(en PowerShell: `Remove-Item .git/index.lock`)

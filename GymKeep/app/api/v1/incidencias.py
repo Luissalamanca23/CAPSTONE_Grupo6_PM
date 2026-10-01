@@ -1,13 +1,14 @@
+from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.crud import equipamiento as crud_equipamiento
 from app.crud import incidencia as crud_incidencia
 from app.crud import tipo_falla as crud_tipo_falla
-from app.models.gymkeep import EstadoIncidencia
+from app.models.gymkeep import EstadoIncidencia, PrioridadIncidencia
 from app.schemas.incidencia import (
     IncidenciaCreate,
     IncidenciaCreateByQR,
@@ -58,19 +59,49 @@ def crear_incidencia_por_qr(incidencia_in: IncidenciaCreateByQR, db: Session = D
             status_code=400, detail="Ese tipo de falla no esta disponible en el formulario publico."
         )
 
-    return crud_incidencia.create_incidencia_por_qr(db, equipo, tipo_falla, incidencia_in.reportado_por)
+    return crud_incidencia.create_incidencia_por_qr(
+        db,
+        equipo,
+        tipo_falla,
+        incidencia_in.reportado_por,
+        gravedad=incidencia_in.gravedad,
+        funcional=incidencia_in.funcional,
+        descripcion=incidencia_in.descripcion,
+    )
 
 
 @router.get("/", response_model=list[IncidenciaOut])
 def listar_incidencias(
+    response: Response,
     skip: int = 0,
     limit: int = 100,
     estado: Optional[EstadoIncidencia] = None,
     equipo_id: Optional[int] = None,
+    categoria: Optional[str] = None,
+    prioridad: Optional[PrioridadIncidencia] = None,
+    fecha_desde: Optional[date] = None,
+    fecha_hasta: Optional[date] = None,
+    q: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    """Lista incidencias, con filtros opcionales por estado y equipo (recientes primero)."""
-    return crud_incidencia.list_incidencias(db, skip=skip, limit=limit, estado=estado, equipo_id=equipo_id)
+    """Lista incidencias del historial (panel de tecnicos), mas recientes primero.
+
+    Filtros opcionales, todos combinables: estado, equipo, categoria del tipo de falla
+    (mecanica/electrica/otro), prioridad, rango de fechas (fecha_desde/fecha_hasta, por
+    dia) y `q` (texto libre: busca en descripcion, quien reporto, tipo de falla y nombre
+    del equipo). El total que cumple los filtros (ignorando skip/limit) va en el header
+    `X-Total-Count`, para que el panel arme la paginacion sin traer todo de una vez."""
+    filtros = dict(
+        estado=estado,
+        equipo_id=equipo_id,
+        categoria=categoria,
+        prioridad=prioridad,
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+        q=q,
+    )
+    response.headers["X-Total-Count"] = str(crud_incidencia.count_incidencias(db, **filtros))
+    return crud_incidencia.list_incidencias(db, skip=skip, limit=limit, **filtros)
 
 
 @router.get("/{incidencia_id}", response_model=IncidenciaOut)

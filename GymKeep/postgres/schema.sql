@@ -253,6 +253,9 @@ CREATE TABLE IF NOT EXISTS tipos_falla (
     codigo VARCHAR(50) NOT NULL UNIQUE,
     nombre VARCHAR(120) NOT NULL,
     descripcion TEXT,
+    -- Agrupa el catalogo para el formulario del QR (mecanica / electrica / otro): el
+    -- usuario elige la categoria general antes de la falla especifica.
+    categoria VARCHAR(30) NOT NULL DEFAULT 'otro',
     prioridad_base prioridad_incidencia NOT NULL DEFAULT 'media',
     permite_reporte_qr BOOLEAN NOT NULL DEFAULT TRUE,
     permite_deteccion_ia BOOLEAN NOT NULL DEFAULT FALSE,
@@ -488,12 +491,12 @@ FROM sesiones_uso
 GROUP BY equipo_id, DATE(fecha_inicio);
 
 -- ---------- DATOS BASE ----------
-INSERT INTO tipos_falla (codigo, nombre, descripcion, prioridad_base, permite_reporte_qr, permite_deteccion_ia)
+INSERT INTO tipos_falla (codigo, nombre, descripcion, categoria, prioridad_base, permite_reporte_qr, permite_deteccion_ia)
 VALUES
-    ('DESGASTE', 'Desgaste visible', 'Desgaste visible de piezas o componentes.', 'baja', TRUE, TRUE),
-    ('SONIDO_EXTRANO', 'Sonido extraño', 'Ruido o vibración no habitual durante el uso.', 'media', TRUE, TRUE),
-    ('ROTA', 'Pieza rota / no funciona', 'Equipo con daño físico o incapaz de operar correctamente.', 'urgente', TRUE, TRUE),
-    ('NO_ENCIENDE', 'No enciende', 'Equipo eléctrico/electrónico no inicia.', 'urgente', TRUE, TRUE),
-    ('MOVIMIENTO_ANOMALO', 'Movimiento anómalo', 'La IA detecta un patrón mecánico o de uso anómalo.', 'alta', FALSE, TRUE),
-    ('OTRO', 'Otro', 'Falla no clasificada.', 'media', TRUE, FALSE)
+    ('DESGASTE', 'Desgaste visible', 'Desgaste visible de piezas o componentes.', 'mecanica', 'baja', TRUE, TRUE),
+    ('SONIDO_EXTRANO', 'Sonido extraño', 'Ruido o vibración no habitual durante el uso.', 'mecanica', 'media', TRUE, TRUE),
+    ('ROTA', 'Pieza rota / no funciona', 'Equipo con daño físico o incapaz de operar correctamente.', 'mecanica', 'urgente', TRUE, TRUE),
+    ('NO_ENCIENDE', 'No enciende', 'Equipo eléctrico/electrónico no inicia.', 'electrica', 'urgente', TRUE, TRUE),
+    ('MOVIMIENTO_ANOMALO', 'Movimiento anómalo', 'La IA detecta un patrón mecánico o de uso anómalo.', 'otro', 'alta', FALSE, TRUE),
+    ('OTRO', 'Otro', 'Falla no clasificada.', 'otro', 'media', TRUE, FALSE)
 ON CONFLICT (codigo) DO NOTHING;

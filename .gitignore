@@ -1,1 +1,36 @@
+# Sistemas operativos / editores
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+venv/
+.venv/
+env/
+
+# Entornos locales (credenciales/config de cada persona, no se comparten)
+.env
+.env.local
+!.env.example
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/build/
+.vite/
+
+# Datos de los contenedores (Postgres/Mongo/MinIO) si se llegan a montar como carpeta local
+db_data/
+mongo_data/
+minio_data/
+
+# Logs
+*.log
+npm-debug.log*

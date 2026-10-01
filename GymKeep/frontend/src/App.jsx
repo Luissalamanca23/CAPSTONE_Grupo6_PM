@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom'
 import AdminLayout from './layouts/AdminLayout.jsx'
+import Costos from './pages/Costos.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import EquipoDetalle from './pages/EquipoDetalle.jsx'
 import Equipos from './pages/Equipos.jsx'
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/equipos" element={<Equipos />} />
         <Route path="/equipos/:id" element={<EquipoDetalle />} />
         <Route path="/incidencias" element={<Incidencias />} />
+        <Route path="/costos" element={<Costos />} />
         <Route path="/sucursales" element={<Sucursales />} />
       </Route>
     </Routes>

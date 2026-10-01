@@ -2,12 +2,19 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models.gymkeep import Equipo, QrEquipo
+from app.models.gymkeep import EstadoEquipo, EstadoIncidencia, Equipo, QrEquipo
 from app.schemas.equipamiento import EquipoCreate, EquipoUpdate
 
-CARGA_RELACIONES = (joinedload(Equipo.sucursal), joinedload(Equipo.zona), joinedload(Equipo.qr))
+# selectinload (no joinedload) para incidencias: es una relacion 1:N y evita duplicar filas
+# de equipo al traer el join; se usa solo para contar abiertas (equipo.incidencias_abiertas).
+CARGA_RELACIONES = (
+    joinedload(Equipo.sucursal),
+    joinedload(Equipo.zona),
+    joinedload(Equipo.qr),
+    selectinload(Equipo.incidencias),
+)
 
 
 def get_equipo(db: Session, equipo_id: int) -> Optional[Equipo]:
@@ -64,8 +71,21 @@ def create_equipo(db: Session, equipo_in: EquipoCreate) -> Equipo:
 
 
 def update_equipo(db: Session, equipo: Equipo, equipo_in: EquipoUpdate) -> Equipo:
-    for campo, valor in equipo_in.model_dump(exclude_unset=True).items():
+    datos = equipo_in.model_dump(exclude_unset=True)
+    nuevo_estado = datos.get("estado")
+
+    for campo, valor in datos.items():
         setattr(equipo, campo, valor)
+
+    # Sincronizacion: al mandar el equipo a mantenimiento, las incidencias que seguian
+    # "pendientes" (nadie las habia tomado todavia) pasan a "en_proceso" -- ya hay alguien
+    # trabajando en la maquina. Las que ya estaban en_proceso/resueltas/descartadas no se
+    # tocan. El regreso a "operativo" queda a criterio del tecnico (no se automatiza).
+    if nuevo_estado == EstadoEquipo.en_mantenimiento:
+        for incidencia in equipo.incidencias:
+            if incidencia.estado == EstadoIncidencia.pendiente:
+                incidencia.estado = EstadoIncidencia.en_proceso
+
     db.commit()
     db.refresh(equipo)
     return equipo
