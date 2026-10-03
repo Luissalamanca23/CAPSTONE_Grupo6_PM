@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from gymkeep_vision import config as config_mod
+from gymkeep_vision import tiempo
 from gymkeep_vision.config import RAIZ
 
 ZONA_HORARIA = ZoneInfo("America/Santiago")
@@ -30,9 +31,13 @@ def cmd_procesar(args) -> int:
     cfg = config_mod.cargar(args.config).con_parametros(
         t_on_s=args.t_on, t_off_s=args.t_off, confianza_min=args.confianza, escala_tiempo=args.escala_tiempo
     )
-    inicio = datetime.fromisoformat(args.inicio) if args.inicio else datetime.now(ZONA_HORARIA)
-    if inicio.tzinfo is None:
-        inicio = inicio.replace(tzinfo=ZONA_HORARIA)
+    inicio, origen_inicio = tiempo.resolver_inicio(args.video, args.inicio, ZONA_HORARIA)
+    logging.info("Hora del primer cuadro: %s (%s)", tiempo.hora(inicio), origen_inicio)
+    if Path(args.video).exists() and origen_inicio != tiempo.ORIGEN_ARGUMENTO:
+        logging.warning(
+            "La hora de inicio no viene de --inicio: si el video es una grabacion, las sesiones "
+            "quedaran registradas con una hora que puede no ser la real (usar --inicio)."
+        )
     salida = Path(args.salida) if args.salida else (
         RAIZ / "salida" / f"{Path(args.video).stem}_{datetime.now():%Y%m%d-%H%M%S}"
     )
@@ -62,6 +67,7 @@ def cmd_procesar(args) -> int:
     ).ejecutar()
     for destino in destinos:
         destino.cerrar()
+    resultado.origen_inicio = origen_inicio
 
     verdad = None
     if args.verdad:
@@ -154,7 +160,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("-o", "--salida", help="carpeta de resultados (por defecto vision/salida/<video>_<fecha>)")
     p.add_argument("--api", help="URL de la API GymKeep (ej. http://localhost:8000) para enviar eventos en vivo")
     p.add_argument("--registrar", action="store_true", help="crea en GymKeep la camara/equipos/modelo que falten")
-    p.add_argument("--inicio", help="fecha-hora real del primer cuadro (ISO 8601); por defecto, ahora")
+    p.add_argument(
+        "--inicio",
+        help="fecha-hora real del primer cuadro (ISO 8601). Si falta: metadatos del video, o la hora actual",
+    )
     p.add_argument("--desde", type=float, default=0.0, help="segundo del video (del archivo) donde empezar")
     p.add_argument("--max-segundos", type=float, help="analizar solo esta cantidad de segundos del archivo")
     p.add_argument("--t-on", type=float, help="sobrescribe T_on (MP-45) en segundos")

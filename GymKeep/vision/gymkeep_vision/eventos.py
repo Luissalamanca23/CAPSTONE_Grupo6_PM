@@ -8,12 +8,12 @@ import json
 import logging
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import httpx
 
-from gymkeep_vision import __version__
+from gymkeep_vision import __version__, tiempo
 from gymkeep_vision.config import Config, ConfigMaquina
 from gymkeep_vision.sesiones import EventoUso
 from gymkeep_vision.zonas import Deteccion
@@ -61,7 +61,7 @@ def construir_evento(
 
     return {
         "event_uuid": str(uuid.uuid4()),
-        "timestamp": (inicio_video + timedelta(seconds=ev.t)).isoformat(),
+        "timestamp": tiempo.marca(inicio_video, ev.t),
         "empresa_id": cfg.camara.empresa_id,
         "sucursal_id": cfg.camara.sucursal_id,
         "zona_id": cfg.camara.zona_id,

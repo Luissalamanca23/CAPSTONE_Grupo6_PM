@@ -50,15 +50,21 @@ Deja en `salida/<video>_<fecha>/`:
 | Archivo | Qué es |
 |---|---|
 | `sesiones.csv` | Una fila por sesión: máquina, inicio, fin, duración, tiempo con alguien encima, pausas, confianza, motivo de cierre |
-| `resumen.json` | Por máquina: sesiones, uso total, % de ocupación; parámetros y rendimiento |
-| `linea_de_tiempo.png` | Detecciones crudas vs. sesiones por máquina |
-| `video_anotado.mp4` | Video con ROI, personas, estado de cada máquina y cabezas difuminadas |
+| `resumen.json` | Por máquina: sesiones, uso total, % de ocupación; parámetros, rendimiento y de dónde salió la hora de inicio |
+| `linea_de_tiempo.png` | Detecciones crudas vs. sesiones por máquina, con la hora real en el eje |
+| `video_anotado.mp4` | Video con ROI, personas y cabezas difuminadas. Muestra la hora real, la posición en el video y el cronómetro de cada máquina (sesión en curso, o cuánto falta para T_on / T_off). Se reproduce al ritmo del reloj real, aunque el archivo venga acelerado |
 | `eventos.jsonl` | Los eventos exactamente como se envían a `POST /eventos-ia/` |
 | `presencia.csv` | La señal cruda por máquina y por instante (sirve para `recalibrar`) |
 | `evidencias/` | Un cuadro anotado por cada `inicio_uso` |
 
-Opciones útiles: `--inicio 2026-09-26T18:00:00` (hora real del primer cuadro), `--max-segundos 120`
-(prueba corta), `--desde 300`, `--sin-video` (más rápido), `--mostrar` (ventana en vivo),
+**Hora real.** Todo se registra con la hora real del primer cuadro más el tiempo transcurrido
+(con milisegundos). Esa hora sale, en este orden, de `--inicio 2026-09-26T18:00:00`, de los
+metadatos del video (`creation_time`) o de la hora en que se procesa. En un video exportado desde
+un grabador, los metadatos suelen tener la hora de exportación, no la de grabación: para una
+grabación, usar siempre `--inicio`. El origen queda en `resumen.json` y el pipeline avisa si no
+vino de `--inicio`.
+
+Otras opciones: `--max-segundos 120` (prueba corta), `--desde 300`, `--sin-video` (más rápido), `--mostrar` (ventana en vivo),
 `--t-on / --t-off / --confianza / --escala-tiempo` (sobrescriben el YAML).
 La fuente también puede ser una cámara: `rtsp://usuario:clave@ip/stream` o `0` (webcam).
 

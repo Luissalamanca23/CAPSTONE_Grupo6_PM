@@ -44,6 +44,7 @@ def generar(resultado: Resultado, salida: Path, verdad: dict[str, list[tuple[flo
                     "t_inicio_s": round(s.inicio, 1),
                     "t_fin_s": round(s.fin, 1),
                     "duracion_s": round(s.duracion_s, 1),
+                    "duracion": mmss(s.duracion_s),
                     "presencia_s": round(s.presencia_s, 1),
                     "pausas": s.pausas,
                     "pausa_max_s": round(s.pausa_max_s, 1),
@@ -93,6 +94,9 @@ def generar(resultado: Resultado, salida: Path, verdad: dict[str, list[tuple[flo
         "inicio_observado": (inicio + timedelta(seconds=resultado.t_inicio_s)).isoformat(timespec="seconds"),
         "fin_observado": (inicio + timedelta(seconds=resultado.t_final_s)).isoformat(timespec="seconds"),
         "periodo_observado_s": round(periodo_s, 1),
+        # De donde salio la hora del primer cuadro (argumento, metadatos del video u hora de
+        # procesamiento): sin esto no se sabe si las horas registradas son las de grabacion.
+        "origen_hora_inicio": resultado.origen_inicio or None,
         "interrumpido": resultado.interrumpido,
         "modelo": {
             "pesos": Path(cfg.modelo.pesos).name,
@@ -190,7 +194,11 @@ def _grafico(resultado: Resultado, presencia: dict[str, list[float]], ruta: Path
     ax.set_ylim(-0.6, len(nombres) - 0.4)
     paso = next((p for p in (10, 30, 60, 120, 300, 600, 900, 1800, 3600) if (t1 - t0) / p <= 10), 7200)
     ax.xaxis.set_major_locator(MultipleLocator(paso))
-    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: mmss(v)))
+    # El eje muestra la hora real (no los segundos del archivo): asi se lee directo a que
+    # hora se uso cada maquina.
+    formato = "%H:%M:%S" if paso < 60 else "%H:%M"
+    inicio = resultado.inicio_video
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: (inicio + timedelta(seconds=v)).strftime(formato)))
     ax.tick_params(axis="x", colors=TEXTO_SECUNDARIO, labelsize=8)
     ax.tick_params(axis="y", length=0)
     ax.grid(axis="x", color=REJILLA, linewidth=0.8)
@@ -198,7 +206,7 @@ def _grafico(resultado: Resultado, presencia: dict[str, list[float]], ruta: Path
     for lado in ("top", "right", "left"):
         ax.spines[lado].set_visible(False)
     ax.spines["bottom"].set_color(REJILLA)
-    ax.set_xlabel("tiempo desde el inicio del video (mm:ss, reloj real)", fontsize=8.5, color=TEXTO_SECUNDARIO)
+    ax.set_xlabel(f"hora (reloj real, {inicio:%d/%m/%Y})", fontsize=8.5, color=TEXTO_SECUNDARIO)
 
     uso = cfg.uso
     ax.set_title(
@@ -226,6 +234,7 @@ def imprimir(resumen: dict) -> str:
     lineas = [
         f"Periodo observado: {resumen['inicio_observado']} -> {resumen['fin_observado']}"
         f" ({mmss(resumen['periodo_observado_s'])})",
+        f"Hora del primer cuadro tomada de: {resumen.get('origen_hora_inicio') or '-'}",
         "",
         f"{'Maquina':<24}{'Sesiones':>9}{'Uso total':>11}{'Ocupacion':>11}{'Promedio':>10}{'Descart.':>10}"
         + (f"{'Uso real':>12}{'IoU':>7}" if any("validacion" in m for m in resumen["maquinas"]) else ""),
