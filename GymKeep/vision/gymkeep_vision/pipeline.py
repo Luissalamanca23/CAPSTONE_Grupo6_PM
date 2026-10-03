@@ -22,6 +22,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from gymkeep_vision import tiempo
 from gymkeep_vision.config import Config, ConfigMaquina
 from gymkeep_vision.eventos import construir_evento
 from gymkeep_vision.sesiones import Estado, MonitorMaquina, Observacion
@@ -64,6 +65,7 @@ class Resultado:
     segundos_computo: float = 0.0
     video_salida: Path | None = None
     interrumpido: bool = False
+    origen_inicio: str = ""
 
 
 class Pipeline:
@@ -132,12 +134,22 @@ class Pipeline:
         resultado = Resultado(self.cfg, self.fuente, self.inicio_video, self.monitores)
         resultado.t_inicio_s = self.desde_s * escala if es_archivo else 0.0
 
+        # Reloj del video anotado: cada cuadro escrito representa `periodo` segundos reales,
+        # asi la hora impresa avanza al ritmo real al reproducirlo (aunque el archivo venga
+        # acelerado o, en vivo, el analisis se atrase).
+        periodo = (
+            tiempo.periodo_salida(fps, salto, escala) if es_archivo else self.cfg.intervalo_analisis_s
+        )
+        cuadros_archivo = int(captura.get(cv2.CAP_PROP_FRAME_COUNT)) if es_archivo else 0
+        self._en_vivo = not es_archivo
+        self._duracion_s = cuadros_archivo / fps * escala if cuadros_archivo > 0 else None
+        escritos = 0
+
         escritor = None
         ruta_video_tmp = self.salida / "video_anotado_tmp.mp4"
         if self.guardar_video:
-            fps_salida = fps / salto if es_archivo else 1 / self.cfg.intervalo_analisis_s
             escritor = cv2.VideoWriter(
-                str(ruta_video_tmp), cv2.VideoWriter_fourcc(*"mp4v"), fps_salida, self._tam_dibujo
+                str(ruta_video_tmp), cv2.VideoWriter_fourcc(*"mp4v"), 1 / periodo, self._tam_dibujo
             )
 
         archivo_presencia = (self.salida / "presencia.csv").open("w", newline="", encoding="utf-8")
@@ -210,15 +222,17 @@ class Pipeline:
                     self._emitir(ev, nombre, dets, anotado, resultado)
 
                 if escritor is not None:
-                    escritor.write(anotado)
+                    for _ in range(tiempo.cuadros_pendientes(t, resultado.t_inicio_s, periodo, escritos)):
+                        escritor.write(anotado)
+                        escritos += 1
                 if self.mostrar:
                     cv2.imshow("GymKeep Vision", anotado)
                     if cv2.waitKey(1) & 0xFF == ord("q"):
                         break
                 if resultado.cuadros_analizados % 300 == 0:
                     log.info(
-                        "t=%s  en uso: %s",
-                        mmss(t),
+                        "%s  en uso: %s",
+                        self._hora(t),
                         ", ".join(n for n, m in self.monitores.items() if m.sesion) or "-",
                     )
         except KeyboardInterrupt:
@@ -278,7 +292,12 @@ class Pipeline:
         ]
 
     def _timestamp(self, t: float) -> str:
-        return (self.inicio_video + timedelta(seconds=t)).isoformat(timespec="seconds")
+        """Hora real del instante `t` para registrar (ISO 8601 con milisegundos)."""
+        return tiempo.marca(self.inicio_video, t)
+
+    def _hora(self, t: float) -> str:
+        """Hora real del instante `t` para mostrar (dd/mm/aaaa hh:mm:ss)."""
+        return tiempo.hora(self.inicio_video + timedelta(seconds=t))
 
     def _emitir(self, ev, nombre: str, dets: list[Deteccion], anotado, resultado: Resultado) -> None:
         maquina = self.maquinas[nombre]
@@ -302,7 +321,7 @@ class Pipeline:
             "%-12s %-22s %s%s",
             ev.tipo,
             nombre,
-            self._timestamp(ev.t),
+            self._hora(ev.t),
             f"  duracion {mmss(ev.sesion.duracion_s)}" if ev.tipo == "fin_uso" else "",
         )
 
@@ -336,45 +355,91 @@ class Pipeline:
             color = COLORES[monitor.estado]
             puntos = (zona.poligono * f).round().astype(np.int32)
             cv2.polylines(img, [puntos], True, color, 2)
-            # Junto a la ROI va solo un rotulo corto (maquinas pegadas no se tapan entre si);
-            # el detalle va en el panel de estado.
+            # Junto a la ROI va un rotulo corto con su cronometro (maquinas pegadas no se
+            # tapan entre si); el detalle completo va en el panel de estado.
             x, y = puntos[:, 0].min(), puntos[:, 1].min()
-            _etiqueta(img, [_rotulo(zona.nombre)], (int(x), int(y)), color)
+            rotulo = f"{_rotulo(zona.nombre)} {_estado_corto(monitor, t)}".strip()
+            _etiqueta(img, [rotulo], (int(x), int(y)), color)
 
         self._panel(img, t)
         return img
 
     def _panel(self, img: np.ndarray, t: float) -> None:
         uso = self.cfg.uso
-        filas = [
-            (None, f"GymKeep Vision  {self._timestamp(t)}"),
-            (None, f"T_on {uso.t_on_s:.0f}s  T_off {uso.t_off_s:.0f}s  conf>={self.cfg.confianza_min:.2f}"),
+        if self._en_vivo:
+            reloj = "EN VIVO"
+        elif self._duracion_s:
+            reloj = f"video {mmss(t)} / {mmss(self._duracion_s)}"
+        else:
+            reloj = f"video {mmss(t)}"
+        cabecera = [
+            f"GymKeep Vision   {self._hora(t)}",
+            f"{reloj}    T_on {uso.t_on_s:.0f} s   T_off {uso.t_off_s:.0f} s   conf >= {self.cfg.confianza_min:.2f}",
         ]
+        filas = []
         for zona in self.zonas:
             monitor = self.monitores[zona.nombre]
-            estado = ETIQUETAS[monitor.estado]
-            if monitor.sesion is not None:
-                estado += f" {mmss(monitor.sesion.duracion_s)}"
             filas.append(
                 (
                     COLORES[monitor.estado],
-                    f"{zona.nombre}: {estado:<16} total {mmss(monitor.uso_total_s)} ({len(monitor.sesiones)} ses.)",
+                    [
+                        zona.nombre,
+                        _estado_largo(monitor, t),
+                        f"total {mmss(monitor.uso_total_s)}  |  {monitor.sesiones_total} ses.",
+                    ],
                 )
             )
-        escala, alto_linea = 0.5, 20
-        ancho = max(cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, escala, 1)[0][0] for _, txt in filas) + 34
-        alto = alto_linea * len(filas) + 10
+
+        fuente, escala, alto_linea, sep = cv2.FONT_HERSHEY_SIMPLEX, 0.5, 20, 16
+
+        def ancho_texto(texto: str) -> int:
+            return cv2.getTextSize(texto, fuente, escala, 1)[0][0]
+
+        # Columnas alineadas (la fuente no es monoespaciada): maquina | estado | acumulado.
+        anchos = [max((ancho_texto(cols[i]) for _, cols in filas), default=0) for i in range(3)]
+        ancho = max([ancho_texto(c) for c in cabecera] + [20 + sum(anchos) + 2 * sep]) + 16
+        alto = alto_linea * (len(cabecera) + len(filas)) + 10
         x0, y0 = 10, img.shape[0] - alto - 10
         fondo = img.copy()
         cv2.rectangle(fondo, (x0, y0), (x0 + ancho, y0 + alto), (30, 30, 30), -1)
         cv2.addWeighted(fondo, 0.72, img, 0.28, 0, img)
-        for i, (color, txt) in enumerate(filas):
-            y = y0 + 20 + i * alto_linea
+
+        y = y0 + 20
+        for texto in cabecera:
+            cv2.putText(img, texto, (x0 + 8, y), fuente, escala, (255, 255, 255), 1, cv2.LINE_AA)
+            y += alto_linea
+        for color, cols in filas:
             x = x0 + 8
-            if color is not None:
-                cv2.rectangle(img, (x, y - 11), (x + 12, y + 1), color, -1)
-                x += 20
-            cv2.putText(img, txt, (x, y), cv2.FONT_HERSHEY_SIMPLEX, escala, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.rectangle(img, (x, y - 11), (x + 12, y + 1), color, -1)
+            x += 20
+            for texto, ancho_col in zip(cols, anchos):
+                cv2.putText(img, texto, (x, y), fuente, escala, (255, 255, 255), 1, cv2.LINE_AA)
+                x += ancho_col + sep
+            y += alto_linea
+
+
+def _estado_largo(monitor: MonitorMaquina, t: float) -> str:
+    """Estado con su cronometro: cuanto dura la sesion, o cuanto falta para T_on / T_off."""
+    progreso = monitor.progreso(t)
+    if monitor.estado == Estado.EN_USO:
+        return f"EN USO {mmss(monitor.sesion.duracion_s)}"
+    if monitor.estado == Estado.PAUSA and progreso:
+        return f"PAUSA {progreso[0]:.0f}/{progreso[1]:.0f} s"
+    if monitor.estado == Estado.CANDIDATA and progreso:
+        return f"DETECTANDO {progreso[0]:.0f}/{progreso[1]:.0f} s"
+    return ETIQUETAS[monitor.estado]
+
+
+def _estado_corto(monitor: MonitorMaquina, t: float) -> str:
+    """Cronometro que va junto a la ROI (vacio si la maquina esta libre)."""
+    progreso = monitor.progreso(t)
+    if monitor.estado == Estado.EN_USO:
+        return mmss(monitor.sesion.duracion_s)
+    if monitor.estado == Estado.PAUSA and progreso:
+        return f"pausa {progreso[0]:.0f}s"
+    if monitor.estado == Estado.CANDIDATA and progreso:
+        return f"{progreso[0]:.0f}/{progreso[1]:.0f}s"
+    return ""
 
 
 def _rotulo(nombre: str) -> str:

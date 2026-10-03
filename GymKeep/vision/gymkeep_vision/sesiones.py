@@ -126,6 +126,20 @@ class MonitorMaquina:
             total += self.sesion.duracion_s
         return total
 
+    @property
+    def sesiones_total(self) -> int:
+        """Sesiones cerradas mas la que esta en curso (la que se ve en pantalla)."""
+        return len(self.sesiones) + (1 if self.sesion is not None else 0)
+
+    def progreso(self, t: float) -> tuple[float, float] | None:
+        """(transcurrido, umbral) de la regla que esta corriendo en el instante `t`: cuanto
+        lleva una candidatura hacia T_on, o una pausa hacia T_off. None si no corre ninguna."""
+        if self.estado == Estado.CANDIDATA and self._candidata is not None:
+            return t - self._candidata.inicio, self.p.t_on_s
+        if self.estado == Estado.PAUSA and self.sesion is not None:
+            return t - self.sesion.ultima_presencia, self.p.t_off_s
+        return None
+
     def actualizar(self, obs: Observacion) -> list[EventoUso]:
         if self._t_prev is not None and obs.t < self._t_prev:
             raise ValueError("las observaciones deben llegar en orden de tiempo")
