@@ -28,7 +28,26 @@ def cmd_procesar(args) -> int:
     from gymkeep_vision.eventos import DestinoAPI, DestinoJSONL, resolver_ids
     from gymkeep_vision.pipeline import Pipeline
 
-    cfg = config_mod.cargar(args.config).con_parametros(
+    from gymkeep_vision import vivo
+
+    cliente = _cliente(args.api) if args.api else None
+    publicador = None
+    if args.camara:
+        # Zonas y parametros salen de la plataforma (lo que se dibujo en el panel); el YAML,
+        # si se entrega, solo aporta el modelo y la privacidad.
+        if cliente is None:
+            raise SystemExit("--camara requiere --api")
+        camara = vivo.buscar_camara(cliente, args.camara)
+        datos = vivo.leer_configuracion(cliente, camara["id"])
+        base = config_mod.cargar(args.config) if args.config else None
+        cfg = config_mod.desde_api(datos, base)
+        publicador = vivo.PublicadorVivo(cliente, camara["id"], huella_config=vivo.huella(datos))
+        logging.info("Camara %s (id %s): %d maquinas con zona", cfg.camara.codigo, cfg.camara.id, len(cfg.maquinas))
+    elif args.config:
+        cfg = config_mod.cargar(args.config)
+    else:
+        raise SystemExit("Falta la configuracion: -c config/mi_camara.yaml, o --api URL --camara CODIGO")
+    cfg = cfg.con_parametros(
         t_on_s=args.t_on, t_off_s=args.t_off, confianza_min=args.confianza, escala_tiempo=args.escala_tiempo
     )
     inicio, origen_inicio = tiempo.resolver_inicio(args.video, args.inicio, ZONA_HORARIA)
@@ -45,7 +64,6 @@ def cmd_procesar(args) -> int:
     destinos: list = [DestinoJSONL(salida / "eventos.jsonl")]
     api = None
     if args.api:
-        cliente = _cliente(args.api)
         resolver_ids(cliente, cfg, registrar=args.registrar)
         api = DestinoAPI(cliente)
         destinos.append(api)
@@ -64,9 +82,14 @@ def cmd_procesar(args) -> int:
         mostrar=args.mostrar,
         desde_s=args.desde,
         max_segundos=args.max_segundos,
+        publicador=publicador,
+        tiempo_real=args.tiempo_real,
+        repetir=args.repetir,
     ).ejecutar()
     for destino in destinos:
         destino.cerrar()
+    if publicador is not None:
+        publicador.cerrar()
     resultado.origen_inicio = origen_inicio
 
     verdad = None
@@ -156,10 +179,16 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("procesar", help="analiza un video (o camara) y mide el uso de cada maquina")
     p.add_argument("video", help="archivo de video, URL rtsp:// o indice de webcam (0)")
-    p.add_argument("-c", "--config", required=True, help="YAML de la camara (ROI y parametros)")
+    p.add_argument("-c", "--config", help="YAML de la camara (ROI y parametros); opcional con --camara")
     p.add_argument("-o", "--salida", help="carpeta de resultados (por defecto vision/salida/<video>_<fecha>)")
     p.add_argument("--api", help="URL de la API GymKeep (ej. http://localhost:8000) para enviar eventos en vivo")
     p.add_argument("--registrar", action="store_true", help="crea en GymKeep la camara/equipos/modelo que falten")
+    p.add_argument(
+        "--camara",
+        help="codigo de la camara en GymKeep: toma zonas y parametros de la plataforma y publica en vivo (requiere --api)",
+    )
+    p.add_argument("--tiempo-real", action="store_true", help="analiza un archivo al ritmo del reloj, como una camara en vivo")
+    p.add_argument("--repetir", action="store_true", help="al terminar el archivo vuelve a empezar (demostraciones)")
     p.add_argument(
         "--inicio",
         help="fecha-hora real del primer cuadro (ISO 8601). Si falta: metadatos del video, o la hora actual",

@@ -15,7 +15,7 @@ import logging
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -81,8 +81,17 @@ class Pipeline:
         mostrar: bool = False,
         desde_s: float = 0.0,
         max_segundos: float | None = None,
+        publicador=None,
+        tiempo_real: bool = False,
+        repetir: bool = False,
     ):
         self.cfg = cfg
+        # Conexion en vivo con la plataforma (vivo.PublicadorVivo), opcional.
+        self.publicador = publicador
+        # Un archivo se analiza al ritmo del reloj (como una camara en vivo) y, con repetir,
+        # vuelve a empezar al terminar: sirve para mostrar la integracion sin camara real.
+        self.tiempo_real = tiempo_real
+        self.repetir = repetir
         self.fuente = fuente
         self.salida = salida
         self.destinos = destinos
@@ -114,6 +123,7 @@ class Pipeline:
         fps = captura.get(cv2.CAP_PROP_FPS) or 25.0
         ancho = int(captura.get(cv2.CAP_PROP_FRAME_WIDTH))
         alto = int(captura.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self._ancho, self._alto = ancho, alto
         self._preparar_zonas(ancho, alto)
         # Las camaras CCTV chicas (ej. 352x240) se dibujan ampliadas para que se lean las etiquetas.
         self._f = max(1.0, 960 / ancho)
@@ -159,20 +169,29 @@ class Pipeline:
         t0_reloj = time.monotonic()
         t_ultimo_vivo = -1e9
         t = resultado.t_inicio_s
+        inicio_pasada = indice
+        self._desfase = 0.0  # segundos reales de las pasadas anteriores (--repetir)
         try:
             while True:
-                if es_archivo and (indice - int(self.desde_s * fps)) % salto:
-                    if not captura.grab():
-                        break
-                    indice += 1
-                    continue
-                ok, cuadro = captura.read()
+                if es_archivo and (indice - inicio_pasada) % salto:
+                    if captura.grab():
+                        indice += 1
+                        continue
+                    ok = False
+                else:
+                    ok, cuadro = captura.read()
                 if not ok:
+                    if self.repetir and es_archivo and resultado.cuadros_analizados:
+                        captura.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        self._desfase = t + periodo
+                        indice = inicio_pasada = 0
+                        log.info("Fin del video: vuelve a empezar (--repetir)")
+                        continue
                     break
                 indice += 1
 
                 if es_archivo:
-                    t = (indice - 1) / fps * escala
+                    t = self._desfase + (indice - 1) / fps * escala
                 else:
                     t = time.monotonic() - t0_reloj
                     if t - t_ultimo_vivo < self.cfg.intervalo_analisis_s:
@@ -191,7 +210,8 @@ class Pipeline:
                     nombre: [d for d in dets if d.confianza >= self.cfg.confianza_min]
                     for nombre, dets in todas.items()
                 }
-                resultado.segundos_computo += time.perf_counter() - inicio_computo
+                latencia = time.perf_counter() - inicio_computo
+                resultado.segundos_computo += latencia
                 resultado.cuadros_analizados += 1
 
                 pendientes = []
@@ -225,6 +245,17 @@ class Pipeline:
                     for _ in range(tiempo.cuadros_pendientes(t, resultado.t_inicio_s, periodo, escritos)):
                         escritor.write(anotado)
                         escritos += 1
+                if self.publicador is not None:
+                    jpeg = self._cuadro_para_panel(cuadro, detecciones) if self.publicador.necesita_cuadro() else None
+                    fps_analisis = resultado.cuadros_analizados / max(1e-6, time.monotonic() - t0_reloj)
+                    self.publicador.publicar(self._estado_vivo(t, detecciones, asignadas, latencia, fps_analisis), jpeg)
+                    nueva = self.publicador.tomar_config_nueva()
+                    if nueva is not None:
+                        self._aplicar_config(nueva, t, resultado)
+                if self.tiempo_real and es_archivo:
+                    adelanto = (t - resultado.t_inicio_s) - (time.monotonic() - t0_reloj)
+                    if adelanto > 0:
+                        time.sleep(adelanto)
                 if self.mostrar:
                     cv2.imshow("GymKeep Vision", anotado)
                     if cv2.waitKey(1) & 0xFF == ord("q"):
@@ -325,6 +356,101 @@ class Pipeline:
             f"  duracion {mmss(ev.sesion.duracion_s)}" if ev.tipo == "fin_uso" else "",
         )
 
+    # ------------------------------------------------------------------ en vivo
+
+    def _estado_vivo(self, t: float, detecciones, asignadas, latencia_s: float, fps: float) -> dict:
+        """Lo que ve la camara ahora, en el formato de POST /vision/camaras/{id}/vivo. Las
+        cajas van normalizadas (0..1) para dibujarlas sobre la imagen en el panel."""
+        ancho, alto = self._ancho, self._alto
+        maquina_de = {
+            id(d): self.maquinas[nombre].equipo_id for nombre, dets in asignadas.items() for d in dets
+        }
+
+        def norm(v: float, total: int) -> float:
+            return round(min(1.0, max(0.0, v / total)), 4)
+
+        personas = [
+            {
+                "caja": [norm(d.bbox[0], ancho), norm(d.bbox[1], alto), norm(d.bbox[2], ancho), norm(d.bbox[3], alto)],
+                "confianza": round(d.confianza, 3),
+                "track_id": d.track_id,
+                "equipo_id": maquina_de.get(id(d)),
+            }
+            for d in detecciones
+            if d.confianza >= self.cfg.confianza_min
+        ]
+        maquinas = []
+        for zona in self.zonas:
+            maquina, monitor = self.maquinas[zona.nombre], self.monitores[zona.nombre]
+            if maquina.equipo_id is None:
+                continue
+            progreso = monitor.progreso(t)
+            maquinas.append(
+                {
+                    "equipo_id": maquina.equipo_id,
+                    "estado": monitor.estado.value,
+                    "sesion_s": round(monitor.sesion.duracion_s, 1) if monitor.sesion else None,
+                    "progreso_s": round(progreso[0], 1) if progreso else None,
+                    "umbral_s": progreso[1] if progreso else None,
+                    "personas": len(asignadas.get(zona.nombre, [])),
+                }
+            )
+        return {
+            "timestamp": self._timestamp(t),
+            "ancho": ancho,
+            "alto": alto,
+            "fps_analisis": round(fps, 2),
+            "latencia_ms": round(latencia_s * 1000, 1),
+            "modelo": {"nombre": self.cfg.modelo.nombre, "version": self.cfg.modelo.version},
+            "maquinas": maquinas,
+            "personas": personas,
+        }
+
+    def _cuadro_para_panel(self, cuadro: np.ndarray, detecciones) -> bytes:
+        """Cuadro limpio (sin anotaciones: el panel dibuja las suyas) con las cabezas
+        difuminadas y a lo mas 1280 px de ancho."""
+        img = cuadro.copy()
+        if self.cfg.difuminar_personas:
+            _difuminar_cabezas(img, detecciones)
+        alto, ancho = img.shape[:2]
+        if ancho > 1280:
+            img = cv2.resize(img, (1280, round(alto * 1280 / ancho)), interpolation=cv2.INTER_AREA)
+        return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 75])[1].tobytes()
+
+    def _aplicar_config(self, datos: dict, t: float, resultado: Resultado) -> None:
+        """Aplica zonas/parametros editados en el panel sin reiniciar. Una maquina que sigue
+        conserva su estado (su sesion en curso no se corta); una quitada cierra su sesion."""
+        from gymkeep_vision.config import desde_api
+
+        nueva = desde_api(datos, base=self.cfg)
+        nuevas = {m.equipo_id for m in nueva.maquinas}
+        previos = {self.maquinas[n].equipo_id: (n, mon) for n, mon in self.monitores.items()}
+        for equipo_id, (nombre, monitor) in previos.items():
+            if equipo_id not in nuevas:
+                for ev in monitor.finalizar(t, "zona_quitada"):
+                    self._emitir(ev, nombre, [], None, resultado)
+
+        # El ritmo de analisis y el modelo no cambian en caliente (dependen del video abierto).
+        self.cfg = replace(
+            nueva,
+            modelo=self.cfg.modelo,
+            escala_tiempo=self.cfg.escala_tiempo,
+            intervalo_analisis_s=self.cfg.intervalo_analisis_s,
+        )
+        self.maquinas = {m.nombre: m for m in self.cfg.maquinas}
+        self.zonas = [
+            ZonaMaquina(m.nombre, m.roi, criterio=m.criterio or self.cfg.criterio_zona, solape_min=self.cfg.solape_min)
+            for m in self.cfg.maquinas
+        ]
+        self._preparar_zonas(self._ancho, self._alto)
+        self.monitores = {}
+        for m in self.cfg.maquinas:
+            monitor = previos[m.equipo_id][1] if m.equipo_id in previos else MonitorMaquina(self.cfg.uso)
+            monitor.p = self.cfg.uso
+            self.monitores[m.nombre] = monitor
+        resultado.config, resultado.monitores = self.cfg, self.monitores
+        log.info("Zonas actualizadas desde la plataforma: %s", ", ".join(self.maquinas) or "ninguna")
+
     # ------------------------------------------------------------------ dibujo
 
     def _anotar(self, cuadro, detecciones, asignadas, t) -> np.ndarray:
@@ -369,7 +495,7 @@ class Pipeline:
         if self._en_vivo:
             reloj = "EN VIVO"
         elif self._duracion_s:
-            reloj = f"video {mmss(t)} / {mmss(self._duracion_s)}"
+            reloj = f"video {mmss(t - self._desfase)} / {mmss(self._duracion_s)}"
         else:
             reloj = f"video {mmss(t)}"
         cabecera = [

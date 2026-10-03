@@ -132,3 +132,47 @@ def cargar(ruta: str | Path) -> Config:
         difuminar_personas=datos.get("privacidad", {}).get("difuminar_personas", True),
         ruta=ruta,
     )
+
+
+def desde_api(datos: dict, base: Config | None = None) -> Config:
+    """Config a partir de GET /api/v1/vision/camaras/{id}/configuracion.
+
+    Las zonas vienen normalizadas (0..1): con resolucion_referencia = (1, 1) el pipeline las
+    escala al tamano real del video. El modelo y la privacidad salen de `base` (un YAML
+    opcional) o de los valores por defecto."""
+    parametros = datos["parametros"]
+    uso_previo = base.uso if base else ParametrosUso()
+    return Config(
+        camara=ConfigCamara(
+            codigo=datos["codigo"],
+            nombre=datos["nombre"],
+            id=datos["camara_id"],
+            empresa_id=datos.get("empresa_id"),
+            sucursal_id=datos.get("sucursal_id"),
+            zona_id=datos.get("zona_id"),
+        ),
+        maquinas=[
+            ConfigMaquina(
+                nombre=m["nombre"],
+                codigo_activo=m["codigo_activo"],
+                roi=[[float(x), float(y)] for x, y in m["roi"]],
+                equipo_id=m["equipo_id"],
+                categoria=m.get("categoria"),
+            )
+            for m in datos["maquinas"]
+        ],
+        modelo=base.modelo if base else ConfigModelo(),
+        uso=replace(
+            uso_previo,
+            t_on_s=parametros["t_on_s"],
+            t_off_s=parametros["t_off_s"],
+            gracia_s=parametros["gracia_s"],
+        ),
+        confianza_min=parametros["confianza_min"],
+        intervalo_analisis_s=base.intervalo_analisis_s if base else 0.2,
+        criterio_zona=base.criterio_zona if base else "pie",
+        solape_min=base.solape_min if base else 0.3,
+        resolucion_referencia=(1, 1),
+        escala_tiempo=parametros.get("escala_tiempo", 1.0),
+        difuminar_personas=base.difuminar_personas if base else True,
+    )
