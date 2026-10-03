@@ -73,3 +73,6 @@ class EquipoOut(EquipoBase):
     sucursal: Optional[SucursalMini] = None
     zona: Optional[ZonaMini] = None
     qr_activo: Optional[QrEquipoOut] = None
+    # Cuenta de incidencias pendientes/en_proceso: es lo que define el color de salud del
+    # equipo en el panel (verde/naranjo/rojo), ver frontend/src/utils/saludEquipo.js.
+    incidencias_abiertas: int = 0

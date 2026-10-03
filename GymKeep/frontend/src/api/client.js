@@ -64,9 +64,41 @@ export const api = {
     const query = params.toString() ? `?${params.toString()}` : ''
     return request(`/incidencias/${query}`)
   },
+  // Igual que listarIncidencias, pero ademas devuelve el total real que cumple los
+  // filtros (header X-Total-Count del backend), para armar paginacion sin traer todos
+  // los registros de una vez. Usado por la pagina de Incidencias (historial completo).
+  listarIncidenciasPaginado: async (filtros = {}) => {
+    const params = new URLSearchParams(filtros)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    const respuesta = await fetch(`${BASE_URL}/incidencias/${query}`)
+    if (!respuesta.ok) {
+      let detalle = respuesta.statusText
+      try {
+        const cuerpo = await respuesta.json()
+        detalle = cuerpo.detail || detalle
+      } catch {
+        // el cuerpo no era JSON, se mantiene el statusText
+      }
+      throw new Error(detalle)
+    }
+    const items = await respuesta.json()
+    const total = Number(respuesta.headers.get('X-Total-Count') ?? items.length)
+    return { items, total }
+  },
   crearIncidencia: (datos) => request('/incidencias/', { method: 'POST', body: JSON.stringify(datos) }),
   crearIncidenciaPorQr: (datos) =>
     request('/incidencias/reporte-qr', { method: 'POST', body: JSON.stringify(datos) }),
   actualizarIncidencia: (id, datos) =>
     request(`/incidencias/${id}`, { method: 'PATCH', body: JSON.stringify(datos) }),
+
+  // Mantenimientos (historial de reparaciones/servicios por equipo)
+  listarMantenimientos: (equipoId) => request(`/mantenimientos/?equipo_id=${equipoId}`),
+  // Igual que listarMantenimientos, pero sin acotar a un equipo: historial completo del
+  // gimnasio con filtros opcionales (tipo/fecha/texto). Usado por la vista de Costos.
+  listarTodosLosMantenimientos: (filtros = {}) => {
+    const params = new URLSearchParams(filtros)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return request(`/mantenimientos/${query}`)
+  },
+  crearMantenimiento: (datos) => request('/mantenimientos/', { method: 'POST', body: JSON.stringify(datos) }),
 }

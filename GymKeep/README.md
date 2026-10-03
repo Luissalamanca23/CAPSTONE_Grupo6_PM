@@ -1,168 +1,221 @@
 # GymKeep — Backend + Panel Web
 
-Sistema de gestion inteligente del mantenimiento de equipamiento en gimnasios.
+Sistema de gestión inteligente del mantenimiento de equipamiento en gimnasios: registro
+de máquinas, reporte de fallas por código QR, seguimiento de incidencias y mantenimientos,
+y control de gastos.
 
-## Esquema de base de datos (ampliado)
+## Qué incluye
 
-Este proyecto usa el esquema completo definido en `GymKeep_BDD_Completa/` (PostgreSQL +
-MongoDB + MinIO/S3), ya integrado al backend y al panel web:
+### 1. Backend (API — FastAPI)
+
+- **Empresas / sucursales / zonas**: jerarquía base donde se registra todo lo demás. Para
+  este Capstone normalmente hay una sola empresa/sucursal (la de `postgres/seed.sql`), pero
+  el modelo soporta más de una.
+- **Equipamiento**: alta, consulta, actualización y baja de máquinas, con **categoría**
+  (cardio / fuerza / funcional / peso libre / otro) además de marca, modelo, sucursal y
+  zona. Al crear un equipo se le emite automáticamente un **QR activo** (token UUID), que
+  puede regenerarse (revoca el anterior y emite uno nuevo) con
+  `POST /equipamiento/{id}/regenerar-qr`.
+- **Incidencias**: registro de fallas de un equipo. Cada incidencia guarda automáticamente
+  **fecha y hora**, un **origen** (`qr`, `ia`, `tecnico`, `sistema` — hoy en la práctica
+  todo entra por `qr`), un **tipo de falla** (del catálogo `tipos_falla`, que también trae
+  su propia categoría: mecánica / eléctrica / otro), un **estado**
+  (`pendiente`, `en_proceso`, `resuelta`, `descartada`) y una **prioridad**
+  (`baja`, `media`, `alta`, `urgente`) que se clasifica sola según la `prioridad_base` del
+  tipo de falla elegido:
+
+  | Tipo de falla (código)   | Categoría | Prioridad base | ¿Disponible en el QR público? |
+  |--------------------------|-----------|-----------------|--------------------------------|
+  | ROTA                     | Mecánica  | Urgente         | Sí                             |
+  | NO_ENCIENDE              | Eléctrica | Urgente         | Sí                             |
+  | MOVIMIENTO_ANOMALO       | Mecánica  | Alta            | No (solo lo detecta la IA)     |
+  | SONIDO_EXTRANO           | Mecánica  | Media           | Sí                             |
+  | OTRO                     | Otro      | Media           | Sí                             |
+  | DESGASTE                 | Mecánica  | Baja            | Sí                             |
+
+  El listado (`GET /incidencias/`) admite filtros combinables por `estado`, `equipo_id`,
+  `categoria`, `prioridad`, `fecha_desde`/`fecha_hasta` y texto libre (`q`), y devuelve el
+  total real que cumple los filtros en el header `X-Total-Count` (para paginar sin traer
+  todos los registros de una vez). Un técnico puede reclasificar estado/prioridad desde el
+  panel, o crear una incidencia manual con `POST /incidencias/`.
+- **Mantenimientos**: `POST /mantenimientos/` registra un mantenimiento ya realizado
+  (correctivo o preventivo), con técnico, descripción y **costo total** opcional; puede
+  dejar resueltas una o varias incidencias abiertas de ese equipo de una sola vez.
+  `GET /mantenimientos/?equipo_id=...` trae el historial de un equipo puntual;
+  `GET /mantenimientos/` sin `equipo_id` trae el historial completo del gimnasio (con
+  filtros opcionales de `tipo`, `fecha_desde`/`fecha_hasta` y `q`), usado por la vista de
+  **Costos de mantención** del panel.
+- **Código QR por equipo**: `GET /equipamiento/{id}/codigo-qr` genera una imagen PNG que,
+  al escanearse, abre el formulario público de reporte para ese equipo. Pensado para
+  imprimir y pegar en la máquina.
+- **Cámaras / modelos de IA / eventos de IA**: inventario de cámaras y sus modelos, con
+  `POST /eventos-ia/` para recibir los eventos del módulo de visión (`vision/`): documento
+  completo a MongoDB y resumen consultable en `eventos_ia_resumen`. Los eventos de uso
+  (`inicio_uso` / `uso_en_curso` / `fin_uso`) se consolidan en `sesiones_uso`, y el endpoint
+  es idempotente por `event_uuid` (reenviar un evento no lo duplica).
+- **Sesiones de uso / horómetro**: `GET /sesiones-uso/` lista las sesiones de uso de cada
+  equipo y `GET /sesiones-uso/horometro` entrega las horas de uso acumuladas por equipo
+  (unión de intervalos: dos sesiones solapadas no suman doble).
+
+### 2. Panel web de gestión (frontend)
+
+Diseño responsive (menú lateral en escritorio, menú hamburguesa en celular/tablet) con un
+botón flotante de **Ayuda** (preguntas frecuentes) disponible en todas las pantallas.
+
+- **Panel**: resumen (equipos registrados, incidencias pendientes/en proceso, equipos
+  fuera de servicio) y la cola de incidencias sin resolver, ordenada por prioridad.
+- **Equipamiento**: alta de equipos (sucursal/zona/categoría), miniatura del QR, semáforo
+  de **salud del equipo** (verde/naranjo/rojo/negro según incidencias abiertas y estado),
+  cambio de estado, búsqueda por texto y filtro por categoría/estado. Tabla con scroll
+  contenido para listas largas.
+- **Equipo → Ver detalle**: imagen QR descargable e invalidable/regenerable, historial de
+  incidencias de esa máquina (con sus propios filtros de categoría/estado/fecha), formulario
+  para **registrar un mantenimiento** (marca incidencias como resueltas y opcionalmente
+  registra su costo), e historial de mantenimientos con el total de **gastos de
+  mantención** de esa máquina.
+- **Incidencias**: listado completo del gimnasio con paginación, búsqueda por texto,
+  filtros por categoría/prioridad/estado y por fecha (hoy/semana/mes/rango
+  personalizado), y tabla con scroll contenido para manejar cientos de registros sin que
+  la página crezca sin límite.
+- **Costos de mantención**: vista consolidada de todos los mantenimientos del gimnasio —
+  gasto total, promedio por mantenimiento, desglose correctivo vs. preventivo, ranking de
+  las máquinas con más gasto, y el detalle completo (fecha, equipo, categoría, tipo,
+  técnico, qué se hizo, costo) con los mismos filtros que el historial de incidencias.
+- **Sucursales**: alta de empresa (si no existe ninguna), sucursales y zonas — base
+  necesaria para poder registrar equipamiento.
+
+### 3. Formulario público de reporte (`/reportar/:token`)
+
+A esta página llega quien escanea el QR pegado en la máquina. Es una encuesta, no un
+formulario de texto: se elige el tipo de falla tocando una opción (solo se muestran los
+tipos con `permite_reporte_qr = true`); si elige "Otro" se abre un cuadro de texto libre
+para describir la falla. El único otro campo es el nombre de quien reporta.
+
+## Modelo de datos
 
 ```text
 EMPRESA
   └── SUCURSAL
        ├── ZONA
        │    ├── CAMARA
-       │    └── EQUIPO
+       │    └── EQUIPO (con categoria propia: cardio/fuerza/funcional/peso_libre/otro)
        │         ├── QR (historico, revocable)
-       │         ├── INCIDENCIA ── TIPO_FALLA (catalogo)
-       │         │     └── MANTENIMIENTO
+       │         ├── INCIDENCIA ── TIPO_FALLA (catalogo, con su propia categoria)
+       │         │     └── MANTENIMIENTO (con costo_total opcional)
        │         └── SESION_USO
        └── MongoDB: eventos_ia / detecciones_raw / telemetria_camaras
 ```
 
-Cambios clave respecto a la version anterior (ver `GymKeep_BDD_Completa/INTEGRACION_REPO_ACTUAL.md`):
-
-- El equipo ya no tiene un `codigo_qr` fijo: el QR es una entidad propia (`qr_equipos`),
-  con token UUID, que puede **revocarse y reemitirse** sin perder el historial.
-- El tipo de falla ya no es un enum fijo: es un **catalogo administrable**
-  (`tipos_falla`), con su propia `prioridad_base` y flags `permite_reporte_qr` /
+- El QR no es un campo fijo del equipo: es una entidad propia (`qr_equipos`), con token
+  UUID, que puede **revocarse y reemitirse** sin perder el historial.
+- El tipo de falla no es un enum fijo: es un **catálogo administrable** (`tipos_falla`),
+  con su propia `categoria`, `prioridad_base` y flags `permite_reporte_qr` /
   `permite_deteccion_ia`.
-- El equipamiento se registra dentro de una jerarquia `empresa → sucursal → zona`.
-- Se agrega el modelo de camaras/IA (`camaras`, `modelos_ia`, `eventos_ia_resumen`,
-  `sesiones_uso`) y auditoria (`registros_auditoria`). El modulo de vision por computadora
-  (`vision/`) ya alimenta `sesiones_uso` a traves de `POST /eventos-ia/`.
+- Cámaras/IA (`camaras`, `modelos_ia`, `eventos_ia_resumen`, `sesiones_uso`) y auditoría
+  (`registros_auditoria`). El módulo de visión por computadora (`vision/`) alimenta
+  `sesiones_uso` a través de `POST /eventos-ia/`.
 
-## Que incluye
-
-1. **Backend (API)**:
-   - **Empresas / sucursales / zonas**: jerarquia base donde se registra todo lo demas.
-   - **Gestion de equipamiento**: alta, consulta, actualizacion y baja de maquinas. Al
-     crear un equipo se le emite automaticamente un **QR activo** (token UUID); puede
-     regenerarse (revoca el anterior y emite uno nuevo) con
-     `POST /equipamiento/{id}/regenerar-qr`.
-   - **Reporte de incidencias**: registro de fallas de un equipo. Cada incidencia guarda
-     automaticamente **fecha y hora** (`fecha_reporte`), un **origen** (`qr`, `ia`,
-     `tecnico`, `sistema`), un **tipo de falla** (del catalogo `tipos_falla`), un
-     **estado** (`pendiente`, `en_proceso`, `resuelta`, `descartada`) y una **prioridad**
-     (`baja`, `media`, `alta`, `urgente`) que se **clasifica sola** segun la
-     `prioridad_base` del tipo de falla elegido:
-
-     | Tipo de falla (codigo)   | Prioridad base | ¿Disponible en el QR publico? |
-     |--------------------------|-----------------|--------------------------------|
-     | ROTA                     | Urgente         | Si                             |
-     | NO_ENCIENDE              | Urgente         | Si                             |
-     | MOVIMIENTO_ANOMALO       | Alta            | No (solo lo detecta la IA)     |
-     | SONIDO_EXTRANO           | Media           | Si                             |
-     | OTRO                     | Media           | Si                             |
-     | DESGASTE                 | Baja            | Si                             |
-
-     Un tecnico puede reclasificar el estado/prioridad manualmente desde el panel, o
-     crear una incidencia manual desde `POST /incidencias/`.
-   - **Codigo QR por equipo**: `GET /equipamiento/{id}/codigo-qr` genera una imagen PNG
-     que, al escanearse, abre el formulario publico de reporte para ese equipo. Pensado
-     para imprimir y pegar en la maquina.
-   - **Camaras / modelos de IA / eventos de IA**: inventario de camaras y sus modelos,
-     con `POST /eventos-ia/` para recibir los eventos del modulo de vision (documento
-     completo a MongoDB, resumen consultable en `eventos_ia_resumen`). Los eventos de uso
-     (`inicio_uso` / `uso_en_curso` / `fin_uso`) se consolidan en `sesiones_uso`, y el
-     endpoint es idempotente por `event_uuid` (reenviar un evento no lo duplica).
-   - **Sesiones de uso / horometro**: `GET /sesiones-uso/` lista las sesiones de uso de
-     cada equipo y `GET /sesiones-uso/horometro` entrega las horas de uso acumuladas por
-     equipo (union de intervalos: dos sesiones solapadas no suman doble).
-2. **Panel Web de gestion** (frontend), con menu lateral:
-   - **Panel**: resumen y cola de incidencias ordenada por prioridad.
-   - **Equipamiento**: alta de equipos (elige sucursal/zona), miniatura del QR, cambio
-     de estado.
-   - **Equipo → Ver detalle**: imagen QR descargable para imprimir, boton para
-     **regenerar el QR**, y el historial de incidencias de esa maquina (fecha/hora, tipo
-     de falla, origen, quien reporto, prioridad, estado).
-   - **Incidencias**: listado filtrable por estado, ordenado por prioridad.
-   - **Sucursales**: alta de empresa (si no existe ninguna), sucursales y zonas — base
-     necesaria para poder registrar equipamiento.
-3. **Formulario publico de reporte** (`/reportar/:token`, token del QR): a esta pagina
-   llega quien escanea el QR pegado en la maquina. Es una encuesta, no un formulario de
-   texto: se elige el tipo de falla tocando una opcion (solo se muestran los tipos con
-   `permite_reporte_qr = true`), y el **unico campo de texto libre es el nombre** de
-   quien reporta.
-4. **Modulo de vision por computadora** (`vision/`, entorno propio): mide el uso y el
-   tiempo de uso de cada maquina desde el video de una camara fija (YOLO26 + ByteTrack +
-   una ROI por maquina + reglas T_on / T_off) y envia los eventos a la API. Ver
-   `vision/README.md`.
+Ver `GymKeep_BDD_Completa/` para el paquete original de diseño de la base de datos
+(documento de referencia; no es lo que corre en producción, eso es
+`postgres/schema.sql`).
 
 ## Stack
 
-- Backend: Python 3.11 + FastAPI + SQLAlchemy 2.0 + PostgreSQL + MongoDB + MinIO/S3 + `qrcode`
-- Frontend: React + Vite + Tailwind CSS + React Router
-- Tests backend: pytest + SQLite en memoria (no requieren Docker corriendo)
+- **Backend**: Python 3.11 + FastAPI + SQLAlchemy 2.0 + PostgreSQL 16 + MongoDB 7 +
+  MinIO/S3 (opcional, ver nota abajo) + `qrcode`.
+- **Frontend**: React 18 + Vite + Tailwind CSS + React Router.
+- **Tests backend**: pytest + SQLite en memoria (no requieren Docker corriendo).
+- Todo corre en contenedores Docker (Docker Compose); el frontend corre con Node/Vite
+  fuera de Docker (más rápido para desarrollar con recarga en caliente).
 
 ## Estructura
 
 ```text
 GymKeep/
 ├── app/
-│   ├── main.py                     # Punto de entrada (incluye CORS para el frontend)
-│   ├── init_db.py                  # Respaldo de desarrollo (SQLite/sin Docker); ver nota abajo
-│   ├── core/                       # config (incluye Mongo/S3), database, mongo, storage
-│   ├── models/gymkeep.py           # Todos los modelos del esquema ampliado (ver arriba)
-│   ├── schemas/, crud/             # empresa, sucursal, zona, equipamiento, incidencia,
-│   │                                 camara, modelo_ia, ai_event
+│   ├── main.py                       # Punto de entrada (CORS, routers, /health)
+│   ├── init_db.py                    # Respaldo de desarrollo (SQLite/sin Docker)
+│   ├── core/                         # config (incluye Mongo/S3), database, mongo, storage
+│   ├── models/gymkeep.py             # Todos los modelos vigentes (ver Modelo de datos)
+│   ├── models/equipamiento.py, incidencia.py  # Obsoletos, solo referencia historica
+│   ├── schemas/, crud/                # empresa, sucursal, zona, equipamiento, incidencia,
+│   │                                    mantenimiento, camara, modelo_ia, ai_event
 │   ├── services/ai_event_service.py  # Puente Postgres <-> MongoDB para eventos de IA
-│   └── api/v1/                     # empresas, sucursales, zonas, equipamiento,
-│                                      incidencias, camaras, modelos_ia, eventos_ia,
-│                                      sesiones_uso
-├── tests/
-├── vision/                         # Modulo de vision por computadora (ver vision/README.md)
+│   └── api/v1/                       # empresas, sucursales, zonas, equipamiento,
+│                                        incidencias, mantenimientos, camaras, modelos_ia,
+│                                        eventos_ia, sesiones_uso
+├── tests/                            # pytest (SQLite en memoria)
+├── vision/                           # Módulo de visión por computadora (ver vision/README.md)
 ├── frontend/
 │   └── src/
-│       ├── layouts/AdminLayout.jsx        # Menu lateral del panel
-│       ├── pages/Reportar.jsx             # Formulario publico (encuesta) del QR
-│       ├── pages/EquipoDetalle.jsx        # QR descargable/regenerable + historial
-│       ├── pages/Sucursales.jsx           # Alta de empresa/sucursal/zona
-│       ├── pages/Dashboard.jsx, Equipos.jsx, Incidencias.jsx
+│       ├── layouts/AdminLayout.jsx         # Menu lateral/responsive + boton de Ayuda
+│       ├── components/                     # Badges (Estado/Prioridad/TipoFalla/
+│       │                                     Categoria/CategoriaEquipo), StatCard, FaqAyuda
+│       ├── pages/Reportar.jsx              # Formulario publico (encuesta) del QR
+│       ├── pages/EquipoDetalle.jsx         # QR, historial filtrable, mantenimientos + costo
+│       ├── pages/Equipos.jsx               # Listado/alta de equipos, filtros, categorias
+│       ├── pages/Incidencias.jsx           # Listado con filtros, fechas y paginacion
+│       ├── pages/Costos.jsx                # Vista consolidada de gastos de mantencion
+│       ├── pages/Dashboard.jsx, Sucursales.jsx
+│       ├── utils/formato.js, saludEquipo.js
 │       └── api/client.js
-├── postgres/schema.sql, postgres/seed.sql   # Esquema completo + datos de ejemplo
+├── postgres/
+│   ├── schema.sql, seed.sql                # Esquema completo + datos de ejemplo minimos
+│   └── reset_demo_incidencias.sql,
+│       agregar_mas_datos.sql               # Scripts opcionales para poblar datos de demo
+│                                             variados (ver seccion "Datos de ejemplo")
 ├── mongo/init-mongo.js                      # Colecciones de IA (con TTL)
-├── docker-compose.yml                       # Postgres + Mongo + MinIO + API
+├── docker-compose.yml                       # Postgres + Mongo + API (+ MinIO opcional)
 ├── Dockerfile
 ├── requirements.txt
 ├── .env.example
 └── GymKeep_BDD_Completa/                    # Paquete original de diseño de la BDD (referencia)
 ```
 
-## IMPORTANTE: hay que reiniciar la base de datos antes de probar esta version
+## Cómo levantarlo
 
-El esquema cambio de forma importante (empresa/sucursal/zona, QR como tabla propia,
-catalogo de tipos de falla, camaras/IA). Como el proyecto todavia esta en desarrollo (solo
-había datos de prueba), la estrategia adoptada es la que recomienda
-`GymKeep_BDD_Completa/INTEGRACION_REPO_ACTUAL.md`: reiniciar el volumen de Postgres y
-partir del esquema nuevo.
+### Requisitos (una sola vez por computador)
+
+- **Git**.
+- **Docker Desktop** (docker.com/products/docker-desktop), abierto mientras trabajas.
+- **Node.js 18+** (incluye `npm`) — nodejs.org, versión LTS.
+
+No hace falta instalar Python, Postgres ni Mongo a mano: Docker se encarga de eso.
+
+### 1) Clonar el proyecto
 
 ```bash
-cd GymKeep
-docker compose down -v   # -v borra los volumenes (datos de prueba de Postgres/Mongo/MinIO)
-docker compose up --build
+git clone https://github.com/Luissalamanca23/CAPSTONE_Grupo6_PM.git
+cd CAPSTONE_Grupo6_PM/GymKeep
 ```
 
-## Como correrlo
-
-### 1) Backend
+### 2) Backend (Postgres + Mongo + API)
 
 ```bash
-cd GymKeep
 cp .env.example .env
-docker compose up --build
+docker compose up -d --build
 ```
 
-Esto levanta **cuatro servicios**: PostgreSQL (`5432`), MongoDB (`27017`), MinIO
-(API `9000`, consola `9001`) y la API (`8000`). Postgres carga automaticamente
-`postgres/schema.sql` y `postgres/seed.sql` la primera vez (incluye una empresa,
-sucursal y zona de ejemplo). API en `http://localhost:8000` (docs en
+Esto levanta **tres servicios**: PostgreSQL (`5432`), MongoDB (`27017`) y la API (`8000`).
+Postgres carga automáticamente `postgres/schema.sql` y `postgres/seed.sql` la primera vez
+que se crea el volumen (incluye una empresa, sucursal, zona y equipo de ejemplo). La API
+queda en `http://localhost:8000` (documentación interactiva en
 `http://localhost:8000/docs`).
 
-### 2) Frontend
+> **MinIO es opcional.** Solo guarda fotos/videos de evidencia de cámaras, una función que
+> todavía no está conectada a ningún pipeline real. Por eso **no se levanta** con el
+> comando de arriba. Si alguna vez necesitas probarlo:
+> ```bash
+> docker compose --profile storage up -d
+> ```
+> (A la fecha de este README, tanto Docker Hub como quay.io dejaron de servir
+> `minio/minio`/`minio/mc` de forma anónima, así que ese perfil puede fallar igual — no
+> afecta al resto del sistema.)
+
+### 3) Frontend
 
 ```bash
-cd GymKeep/frontend
+cd frontend
 npm install
 cp .env.example .env
 npm run dev
@@ -170,42 +223,86 @@ npm run dev
 
 Panel en `http://localhost:5173`.
 
-### 3) Probar el flujo del QR
+### Notas según tu terminal (Windows)
 
-1. Si es la primera vez, revisa **Sucursales** en el panel: deberia existir ya la
-   sucursal de ejemplo (`PM-01`) con la zona `Cardio` (cargadas por `postgres/seed.sql`).
-   Si no existe, créala ahí mismo.
-2. Crea un equipo desde **Equipamiento** (elige sucursal/zona).
+- **PowerShell** no soporta `<` para redirigir un archivo a un comando. Si necesitas pasar
+  un archivo `.sql` a `psql` (ver "Datos de ejemplo" más abajo), usa:
+  ```powershell
+  Get-Content archivo.sql -Raw | docker compose exec -T db psql -U gymkeep -d gymkeep
+  ```
+- **cmd.exe** y **Git Bash (MINGW64)** sí soportan `<` normalmente:
+  ```
+  docker compose exec -T db psql -U gymkeep -d gymkeep < archivo.sql
+  ```
+- Si `docker compose up` falla para un contenedor que no sea `db`, `mongo` o `api`, revisa
+  que no estés intentando levantar el perfil `storage` (MinIO) sin quererlo.
+
+## Datos de ejemplo
+
+`postgres/seed.sql` carga solo lo mínimo (una sucursal, una zona, un equipo). Para tener
+datos variados con los que probar filtros, paginación y la vista de Costos, hay dos
+scripts opcionales en `postgres/` que se ejecutan contra el contenedor ya levantado:
+
+```bash
+# Windows PowerShell:
+Get-Content postgres/reset_demo_incidencias.sql -Raw | docker compose exec -T db psql -U gymkeep -d gymkeep
+Get-Content postgres/agregar_mas_datos.sql -Raw | docker compose exec -T db psql -U gymkeep -d gymkeep
+
+# cmd / bash / Git Bash:
+docker compose exec -T db psql -U gymkeep -d gymkeep < postgres/reset_demo_incidencias.sql
+docker compose exec -T db psql -U gymkeep -d gymkeep < postgres/agregar_mas_datos.sql
+```
+
+- `reset_demo_incidencias.sql`: borra las incidencias existentes y crea ~14 equipos y ~30
+  incidencias variadas (todas en el mismo gimnasio/sucursal).
+- `agregar_mas_datos.sql`: agrega otros ~10 equipos y ~30 incidencias más (no borra nada),
+  y normaliza el origen de todas las incidencias a `qr`.
+
+Ambos son seguros de correr más de una vez (usan `ON CONFLICT DO NOTHING` para los
+equipos/zonas; las incidencias simplemente se suman).
+
+## Probar el flujo del QR
+
+1. Revisa **Sucursales** en el panel: debería existir la sucursal de ejemplo (`PM-01`) con
+   la zona `Cardio` (cargadas por `postgres/seed.sql`). Si no existe, créala ahí mismo.
+2. Crea un equipo desde **Equipamiento** (elige sucursal/zona/categoría).
 3. Haz clic en **Ver detalle** → aparece la imagen del QR.
-4. Escanea el QR con el celular (debe estar en la misma red que tu compu, o simplemente
-   copia el enlace que aparece bajo el QR y ábrelo en otra pestaña).
-5. Se abre el formulario publico: elige un tipo de falla, escribe un nombre y envía. La
-   incidencia queda registrada con fecha/hora, origen `qr` y prioridad automática,
-   visible en **Incidencias** y en el historial del equipo.
+4. Escanea el QR con el celular (debe estar en la misma red que tu computador), o copia el
+   enlace que aparece bajo el QR y ábrelo en otra pestaña.
+5. Se abre el formulario público: elige un tipo de falla (o "Otro" + descripción libre),
+   escribe un nombre y envía. La incidencia queda registrada con fecha/hora, origen `qr` y
+   prioridad automática, visible en **Incidencias** y en el historial del equipo.
 
 ## Tests
 
 ```bash
 cd GymKeep
-pip install -r requirements.txt   # importante: agrega pymongo y boto3
+pip install -r requirements.txt   # incluye pymongo y boto3, usados por app.core.mongo/storage
 pytest
 ```
 
-Los tests usan SQLite en memoria (no necesitan Docker/Postgres/Mongo corriendo), pero
-**si** necesitan que `pymongo` y `boto3` esten instalados (son import de `app.core.mongo`
-/ `app.core.storage`, aunque no se conecten de verdad durante los tests).
+Los tests usan SQLite en memoria (no necesitan Docker/Postgres/Mongo corriendo).
+`pytest.ini` limita esta corrida a `tests/`: el módulo de visión tiene sus propios tests y
+su propio entorno (`cd vision && .venv/bin/python -m pytest`, ver `vision/README.md`).
 
-`pytest.ini` limita esta corrida a `tests/`. El modulo de vision tiene sus propios tests y
-su propio entorno: `cd vision && .venv/bin/python -m pytest` (ver `vision/README.md`).
+## Notas / problemas conocidos
 
-## Proximos pasos
+- **Un solo gimnasio por ahora**: el modelo soporta varias empresas/sucursales, pero tanto
+  los datos de ejemplo como los scripts de `postgres/` asumen una sola sucursal activa
+  (la del seed). Si se necesita multi-sucursal real, hay que revisar esa suposición en el
+  frontend (selectores, filtros) y en los scripts de demo.
+- **MinIO**: quedó detrás de un profile opcional (ver arriba) porque sus imágenes Docker
+  dejaron de poder descargarse de forma anónima. El módulo de visión no lo necesita.
+- **Sin autenticación**: el panel es de acceso libre por ahora (pensado para desarrollo).
 
-- Mostrar en el panel las horas de uso y las sesiones de cada equipo (ya expuestas en
-  `GET /sesiones-uso/`), distinguiendo uso medido de estimado.
-- Conectar de verdad MinIO al pipeline de IA (`app/core/storage.py::subir_evidencia`) para
-  guardar snapshots/clips de evidencia.
-- Modulo de costos/repuestos y dashboard financiero (Costo Total de Propiedad).
-- Autenticacion para el panel (por ahora de acceso libre, para desarrollo).
+## Próximos pasos
+
+- Conectar de verdad un almacenamiento de objetos al pipeline de IA
+  (`app/core/storage.py::subir_evidencia`) para guardar snapshots/clips de evidencia —
+  evaluar alternativas a MinIO dado el problema de distribución mencionado arriba.
+- Autenticación para el panel.
 - Migrar a Alembic para versionar cambios de esquema sin tener que resetear la base de
   datos cada vez (el paquete `GymKeep_BDD_Completa/alembic/` trae un punto de partida).
-- Frontend movil/PWA dedicado para el escaneo de QR.
+- Soporte real para múltiples sucursales en el frontend, si el proyecto lo llega a
+  necesitar.
+- Frontend móvil/PWA dedicado para el escaneo de QR.

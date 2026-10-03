@@ -220,6 +220,16 @@ class Equipo(Base):
                 return qr
         return None
 
+    @property
+    def incidencias_abiertas(self) -> int:
+        """Cuenta incidencias no resueltas/descartadas: es lo que define el color de salud
+        del equipo en el panel (ver frontend/src/utils/saludEquipo.js). No cuenta el
+        historial completo a proposito -- una falla ya resuelta no debe seguir pintando la
+        maquina en rojo."""
+        return sum(
+            1 for i in self.incidencias if i.estado in (EstadoIncidencia.pendiente, EstadoIncidencia.en_proceso)
+        )
+
 
 class QrEquipo(Base):
     __tablename__ = "qr_equipos"
@@ -292,6 +302,10 @@ class TipoFalla(Base):
     codigo = Column(String(50), nullable=False, unique=True)
     nombre = Column(String(120), nullable=False)
     descripcion = Column(Text)
+    # Agrupa el catalogo para el formulario del QR (mecanica / electrica / otro): asi el
+    # usuario elige primero la categoria general y despues la falla especifica dentro de
+    # ella, en vez de una lista plana (ver Reportar.jsx).
+    categoria = Column(String(30), nullable=False, default="otro")
     prioridad_base = Column(
         Enum(PrioridadIncidencia, name="prioridad_incidencia"),
         nullable=False,

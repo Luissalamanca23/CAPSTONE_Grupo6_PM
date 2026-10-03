@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client.js'
 import EstadoBadge from '../components/EstadoBadge.jsx'
+import CategoriaEquipoBadge, { CATEGORIAS_EQUIPO } from '../components/CategoriaEquipoBadge.jsx'
+import { getSaludEquipo } from '../utils/saludEquipo.js'
 
 const ESTADOS_EQUIPO = ['operativo', 'en_mantenimiento', 'fuera_de_servicio', 'retirado']
 const FORM_INICIAL = {
@@ -9,6 +11,7 @@ const FORM_INICIAL = {
   zona_id: '',
   codigo_activo: '',
   nombre: '',
+  categoria: '',
   marca: '',
   modelo: '',
 }
@@ -28,6 +31,18 @@ function Campo({ etiqueta, valor, onChange, requerido }) {
   )
 }
 
+function SaludChip({ equipo }) {
+  const salud = getSaludEquipo(equipo)
+  const abiertas = equipo?.incidencias_abiertas ?? 0
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium ${salud.chip}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${salud.punto}`} />
+      {salud.etiqueta}
+      {salud.clave !== 'negro' && abiertas > 0 && <span className="opacity-70">({abiertas})</span>}
+    </span>
+  )
+}
+
 export default function Equipos() {
   const [equipos, setEquipos] = useState([])
   const [sucursales, setSucursales] = useState([])
@@ -37,6 +52,9 @@ export default function Equipos() {
   const [form, setForm] = useState(FORM_INICIAL)
   const [enviando, setEnviando] = useState(false)
   const [mostrarFormulario, setMostrarFormulario] = useState(false)
+  const [busqueda, setBusqueda] = useState('')
+  const [filtroEstado, setFiltroEstado] = useState('')
+  const [filtroCategoria, setFiltroCategoria] = useState('')
 
   function cargarEquipos() {
     setCargando(true)
@@ -72,6 +90,17 @@ export default function Equipos() {
       .then(setZonas)
       .catch((err) => setError(err.message))
   }, [form.sucursal_id])
+
+  const equiposFiltrados = useMemo(() => {
+    const texto = busqueda.trim().toLowerCase()
+    return equipos.filter((equipo) => {
+      if (filtroEstado && equipo.estado !== filtroEstado) return false
+      if (filtroCategoria && equipo.categoria !== filtroCategoria) return false
+      if (!texto) return true
+      const campos = [equipo.nombre, equipo.codigo_activo, equipo.marca, equipo.modelo, equipo.sucursal?.nombre, equipo.zona?.nombre]
+      return campos.some((campo) => campo && campo.toLowerCase().includes(texto))
+    })
+  }, [equipos, busqueda, filtroEstado, filtroCategoria])
 
   async function manejarEnvio(evento) {
     evento.preventDefault()
@@ -167,6 +196,21 @@ export default function Equipos() {
             requerido
           />
           <Campo etiqueta="Nombre" valor={form.nombre} onChange={(v) => setForm({ ...form, nombre: v })} requerido />
+          <label className="text-xs text-slate-500 flex flex-col gap-1">
+            Categoría
+            <select
+              value={form.categoria}
+              onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm text-slate-900"
+            >
+              <option value="">Sin categoría</option>
+              {CATEGORIAS_EQUIPO.map((c) => (
+                <option key={c.valor} value={c.valor}>
+                  {c.etiqueta}
+                </option>
+              ))}
+            </select>
+          </label>
           <Campo etiqueta="Marca" valor={form.marca} onChange={(v) => setForm({ ...form, marca: v })} />
           <Campo etiqueta="Modelo" valor={form.modelo} onChange={(v) => setForm({ ...form, modelo: v })} />
           <button
@@ -181,13 +225,63 @@ export default function Equipos() {
 
       {error && <p className="text-red-600 text-sm">{error}</p>}
 
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 flex flex-wrap gap-2 items-center">
+        <input
+          type="text"
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder="Buscar por nombre, código, marca, sucursal..."
+          className="flex-1 min-w-[200px] border border-slate-300 rounded-md px-3 py-1.5 text-sm"
+        />
+        <select
+          value={filtroEstado}
+          onChange={(e) => setFiltroEstado(e.target.value)}
+          className="border border-slate-300 rounded-md text-sm px-2.5 py-1.5"
+        >
+          <option value="">Todo estado</option>
+          {ESTADOS_EQUIPO.map((estado) => (
+            <option key={estado} value={estado}>
+              {estado}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filtroCategoria}
+          onChange={(e) => setFiltroCategoria(e.target.value)}
+          className="border border-slate-300 rounded-md text-sm px-2.5 py-1.5"
+        >
+          <option value="">Toda categoría</option>
+          {CATEGORIAS_EQUIPO.map((c) => (
+            <option key={c.valor} value={c.valor}>
+              {c.etiqueta}
+            </option>
+          ))}
+        </select>
+        {(busqueda || filtroEstado || filtroCategoria) && (
+          <button
+            type="button"
+            onClick={() => {
+              setBusqueda('')
+              setFiltroEstado('')
+              setFiltroCategoria('')
+            }}
+            className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
+          >
+            Limpiar
+          </button>
+        )}
+      </div>
+
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+        <div className="overflow-auto max-h-[65vh]">
         <table className="w-full text-sm">
-          <thead className="text-left text-slate-500 bg-slate-50">
+          <thead className="text-left text-slate-500 bg-slate-50 sticky top-0 z-10">
             <tr>
               <th className="px-5 py-2">QR</th>
               <th className="px-5 py-2">Nombre</th>
+              <th className="px-5 py-2">Categoría</th>
               <th className="px-5 py-2">Sucursal / zona</th>
+              <th className="px-5 py-2">Salud</th>
               <th className="px-5 py-2">Estado</th>
               <th className="px-5 py-2">Cambiar estado</th>
               <th className="px-5 py-2"></th>
@@ -196,56 +290,79 @@ export default function Equipos() {
           <tbody>
             {cargando && (
               <tr>
-                <td className="px-5 py-4 text-slate-400" colSpan={6}>Cargando...</td>
+                <td className="px-5 py-4 text-slate-400" colSpan={8}>Cargando...</td>
               </tr>
             )}
-            {!cargando && equipos.length === 0 && (
+            {!cargando && equiposFiltrados.length === 0 && (
               <tr>
-                <td className="px-5 py-4 text-slate-400" colSpan={6}>
-                  Todavía no hay equipos registrados.
+                <td className="px-5 py-4 text-slate-400" colSpan={8}>
+                  {equipos.length === 0
+                    ? 'Todavía no hay equipos registrados.'
+                    : 'Ningún equipo coincide con esta búsqueda.'}
                 </td>
               </tr>
             )}
-            {equipos.map((equipo) => (
-              <tr key={equipo.id} className="border-t border-slate-100">
-                <td className="px-5 py-2">
-                  <img src={api.urlCodigoQr(equipo.id)} alt="QR" className="w-10 h-10 border border-slate-200 rounded" />
-                </td>
-                <td className="px-5 py-2">
-                  <Link to={`/equipos/${equipo.id}`} className="font-medium text-slate-900 hover:text-emerald-700">
-                    {equipo.nombre}
-                  </Link>
-                  <p className="text-xs text-slate-400 font-mono">{equipo.codigo_activo}</p>
-                </td>
-                <td className="px-5 py-2">
-                  {equipo.sucursal?.nombre || '—'}
-                  {equipo.zona?.nombre ? ` · ${equipo.zona.nombre}` : ''}
-                </td>
-                <td className="px-5 py-2">
-                  <EstadoBadge estado={equipo.estado} />
-                </td>
-                <td className="px-5 py-2">
-                  <select
-                    value={equipo.estado}
-                    onChange={(e) => cambiarEstado(equipo, e.target.value)}
-                    className="border border-slate-300 rounded-md text-xs px-2 py-1"
-                  >
-                    {ESTADOS_EQUIPO.map((estado) => (
-                      <option key={estado} value={estado}>
-                        {estado}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-5 py-2">
-                  <Link to={`/equipos/${equipo.id}`} className="text-xs font-medium text-emerald-700 underline">
-                    Ver detalle
-                  </Link>
-                </td>
-              </tr>
-            ))}
+            {equiposFiltrados.map((equipo) => {
+              const salud = getSaludEquipo(equipo)
+              return (
+                <tr key={equipo.id} className={`border-t border-slate-100 border-l-4 ${salud.borde} ${salud.fila}`}>
+                  <td className="px-5 py-2">
+                    <img src={api.urlCodigoQr(equipo.id)} alt="QR" className="w-10 h-10 border border-slate-200 rounded" />
+                  </td>
+                  <td className="px-5 py-2">
+                    <Link to={`/equipos/${equipo.id}`} className="font-medium text-slate-900 hover:text-emerald-700">
+                      {equipo.nombre}
+                    </Link>
+                    <p className="text-xs text-slate-400 font-mono">{equipo.codigo_activo}</p>
+                  </td>
+                  <td className="px-5 py-2">
+                    <CategoriaEquipoBadge categoria={equipo.categoria} />
+                  </td>
+                  <td className="px-5 py-2">
+                    {equipo.sucursal?.nombre || '—'}
+                    {equipo.zona?.nombre ? ` · ${equipo.zona.nombre}` : ''}
+                  </td>
+                  <td className="px-5 py-2">
+                    <SaludChip equipo={equipo} />
+                  </td>
+                  <td className="px-5 py-2">
+                    <EstadoBadge estado={equipo.estado} />
+                  </td>
+                  <td className="px-5 py-2">
+                    <select
+                      value={equipo.estado}
+                      onChange={(e) => cambiarEstado(equipo, e.target.value)}
+                      className="border border-slate-300 rounded-md text-xs px-2 py-1"
+                    >
+                      {ESTADOS_EQUIPO.map((estado) => (
+                        <option key={estado} value={estado}>
+                          {estado}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-5 py-2">
+                    <div className="flex items-center gap-3">
+                      <Link to={`/equipos/${equipo.id}`} className="text-xs font-medium text-emerald-700 underline">
+                        Ver detalle
+                      </Link>
+                      {(equipo.incidencias_abiertas ?? 0) > 0 && (
+                        <Link
+                          to={`/equipos/${equipo.id}?mantenimiento=1`}
+                          className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
+                          title="Abre el detalle con el formulario de mantenimiento ya desplegado."
+                        >
+                          Resolver ({equipo.incidencias_abiertas})
+                        </Link>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

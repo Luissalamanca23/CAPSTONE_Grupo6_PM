@@ -5,6 +5,7 @@ import EstadoBadge from '../components/EstadoBadge.jsx'
 import PrioridadBadge from '../components/PrioridadBadge.jsx'
 import TipoFallaBadge from '../components/TipoFallaBadge.jsx'
 import StatCard from '../components/StatCard.jsx'
+import { getSaludEquipo } from '../utils/saludEquipo.js'
 import { formatearFechaHora } from '../utils/formato.js'
 
 const ORDEN_PRIORIDAD = { urgente: 4, alta: 3, media: 2, baja: 1 }
@@ -85,9 +86,17 @@ export default function Dashboard() {
               <tr key={incidencia.id} className="border-t border-slate-100">
                 <td className="px-5 py-2 whitespace-nowrap">{formatearFechaHora(incidencia.fecha_reporte)}</td>
                 <td className="px-5 py-2">
-                  <Link to={`/equipos/${incidencia.equipo_id}`} className="text-emerald-700 hover:underline">
-                    #{incidencia.equipo_id}
-                  </Link>
+                  {incidencia.equipo ? (
+                    <Link
+                      to={`/equipos/${incidencia.equipo.id}`}
+                      className="font-medium text-slate-900 hover:text-emerald-700 inline-flex items-center gap-1.5"
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${getSaludEquipo(incidencia.equipo).punto}`} />
+                      {incidencia.equipo.nombre}
+                    </Link>
+                  ) : (
+                    `#${incidencia.equipo_id}`
+                  )}
                 </td>
                 <td className="px-5 py-2">
                   <TipoFallaBadge tipoFalla={incidencia.tipo_falla} />
