@@ -1,0 +1,9 @@
+# Fuera de la imagen: entorno local, videos, resultados, pesos (se montan) y material privado.
+.venv/
+datos/
+salida/
+modelos/
+privado/
+tests/
+**/__pycache__/
+.pytest_cache/
