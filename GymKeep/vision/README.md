@@ -116,6 +116,18 @@ punto blanco bajo cada persona en el video anotado). Quien está de pie al lado 
 Cada máquina debe quedar **completa dentro del cuadro**: si su ROI toca el borde, el pipeline
 avisa que su uso puede quedar subestimado. Conviene una cámara elevada.
 
+### 5. En vivo, con la plataforma
+
+```bash
+.venv/bin/python -m gymkeep_vision procesar rtsp://usuario:clave@ip/stream \
+    --api http://localhost:8000 --camara CAM-01 --sin-video
+```
+
+Con `--camara`, las zonas y los parámetros salen de la plataforma (se dibujan en el panel y el
+pipeline los relee cada 5 s), y el estado de cada máquina y la imagen se envían en vivo a la API
+(registro en MongoDB). También corre en Docker, en CPU: `docker-compose.vision.yml`. La guía de la
+integración con el panel (endpoints, datos y pantallas) está en [`INTEGRACION.md`](INTEGRACION.md).
+
 ## Configuración de una cámara
 
 Plantilla comentada: [`config/ejemplo_camara.yaml`](config/ejemplo_camara.yaml).
@@ -153,11 +165,15 @@ vision/
 │   ├── zonas.py        # ROI y asignación persona -> máquina (una persona, una máquina)
 │   ├── pipeline.py     # video -> YOLO + ByteTrack -> zonas -> estados -> eventos + video anotado
 │   ├── eventos.py      # formato EventoIACreate, envío a la API, resolución de IDs
+│   ├── vivo.py         # envío en vivo a la plataforma y relectura de zonas
+│   ├── tiempo.py       # hora real de cada cuadro y formatos
 │   ├── reporte.py      # sesiones.csv, resumen.json, linea_de_tiempo.png
 │   ├── recalibrar.py   # barrido de parámetros contra verdad de terreno
 │   ├── calibrar.py     # herramientas para dibujar/revisar ROI
 │   ├── config.py       # carga del YAML
 │   └── __main__.py     # CLI
 ├── config/ejemplo_camara.yaml
+├── Dockerfile          # pipeline en CPU (ver ../docker-compose.vision.yml)
+├── INTEGRACION.md      # guía de la integración con el panel
 └── tests/
 ```
