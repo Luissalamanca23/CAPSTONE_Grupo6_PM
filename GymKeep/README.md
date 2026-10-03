@@ -49,9 +49,13 @@ y control de gastos.
   al escanearse, abre el formulario público de reporte para ese equipo. Pensado para
   imprimir y pegar en la máquina.
 - **Cámaras / modelos de IA / eventos de IA**: inventario de cámaras y sus modelos, con
-  `POST /eventos-ia/` para recibir eventos de un futuro pipeline de visión por computadora
-  (documento completo a MongoDB, resumen consultable en `eventos_ia_resumen`). Todavía no
-  hay un pipeline de IA conectado; este endpoint deja la base lista para cuando exista.
+  `POST /eventos-ia/` para recibir los eventos del módulo de visión (`vision/`): documento
+  completo a MongoDB y resumen consultable en `eventos_ia_resumen`. Los eventos de uso
+  (`inicio_uso` / `uso_en_curso` / `fin_uso`) se consolidan en `sesiones_uso`, y el endpoint
+  es idempotente por `event_uuid` (reenviar un evento no lo duplica).
+- **Sesiones de uso / horómetro**: `GET /sesiones-uso/` lista las sesiones de uso de cada
+  equipo y `GET /sesiones-uso/horometro` entrega las horas de uso acumuladas por equipo
+  (unión de intervalos: dos sesiones solapadas no suman doble).
 
 ### 2. Panel web de gestión (frontend)
 
@@ -108,8 +112,8 @@ EMPRESA
   con su propia `categoria`, `prioridad_base` y flags `permite_reporte_qr` /
   `permite_deteccion_ia`.
 - Cámaras/IA (`camaras`, `modelos_ia`, `eventos_ia_resumen`, `sesiones_uso`) y auditoría
-  (`registros_auditoria`) están listos para cuando se conecte el módulo de visión por
-  computadora (todavía no implementado en este Capstone).
+  (`registros_auditoria`). El módulo de visión por computadora (`vision/`) alimenta
+  `sesiones_uso` a través de `POST /eventos-ia/`.
 
 Ver `GymKeep_BDD_Completa/` para el paquete original de diseño de la base de datos
 (documento de referencia; no es lo que corre en producción, eso es
@@ -139,8 +143,9 @@ GymKeep/
 │   ├── services/ai_event_service.py  # Puente Postgres <-> MongoDB para eventos de IA
 │   └── api/v1/                       # empresas, sucursales, zonas, equipamiento,
 │                                        incidencias, mantenimientos, camaras, modelos_ia,
-│                                        eventos_ia
+│                                        eventos_ia, sesiones_uso
 ├── tests/                            # pytest (SQLite en memoria)
+├── vision/                           # Módulo de visión por computadora (ver vision/README.md)
 ├── frontend/
 │   └── src/
 │       ├── layouts/AdminLayout.jsx         # Menu lateral/responsive + boton de Ayuda
@@ -277,6 +282,8 @@ pytest
 ```
 
 Los tests usan SQLite en memoria (no necesitan Docker/Postgres/Mongo corriendo).
+`pytest.ini` limita esta corrida a `tests/`: el módulo de visión tiene sus propios tests y
+su propio entorno (`cd vision && .venv/bin/python -m pytest`, ver `vision/README.md`).
 
 ## Notas / problemas conocidos
 
@@ -284,16 +291,12 @@ Los tests usan SQLite en memoria (no necesitan Docker/Postgres/Mongo corriendo).
   los datos de ejemplo como los scripts de `postgres/` asumen una sola sucursal activa
   (la del seed). Si se necesita multi-sucursal real, hay que revisar esa suposición en el
   frontend (selectores, filtros) y en los scripts de demo.
-- **MinIO/cámaras/IA**: el modelo de datos y los endpoints están listos, pero no hay un
-  pipeline de visión por computadora conectado todavía, y MinIO quedó detrás de un
-  profile opcional (ver arriba) porque sus imágenes Docker dejaron de poder descargarse de
-  forma anónima.
+- **MinIO**: quedó detrás de un profile opcional (ver arriba) porque sus imágenes Docker
+  dejaron de poder descargarse de forma anónima. El módulo de visión no lo necesita.
 - **Sin autenticación**: el panel es de acceso libre por ahora (pensado para desarrollo).
 
 ## Próximos pasos
 
-- Módulo de visión por computadora (YOLOv8/OpenCV) que produzca los eventos de
-  `POST /eventos-ia/` (ya hay modelo de datos, Mongo y el puente a Postgres listos).
 - Conectar de verdad un almacenamiento de objetos al pipeline de IA
   (`app/core/storage.py::subir_evidencia`) para guardar snapshots/clips de evidencia —
   evaluar alternativas a MinIO dado el problema de distribución mencionado arriba.

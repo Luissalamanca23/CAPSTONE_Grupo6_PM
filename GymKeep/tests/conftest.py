@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import BigInteger, create_engine
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -9,6 +10,15 @@ from app.main import app
 from app.models.gymkeep import Empresa, PrioridadIncidencia, Sucursal, TipoFalla, Zona
 
 SQLALCHEMY_TEST_URL = "sqlite:///:memory:"
+
+
+# Los modelos usan BigInteger como clave primaria (BIGSERIAL en Postgres), pero SQLite solo
+# autoincrementa columnas "INTEGER PRIMARY KEY": sin esto, todo INSERT falla con
+# "NOT NULL constraint failed: <tabla>.id".
+@compiles(BigInteger, "sqlite")
+def _bigint_como_integer_en_sqlite(tipo, compilador, **kw):
+    return "INTEGER"
+
 
 engine = create_engine(
     SQLALCHEMY_TEST_URL,

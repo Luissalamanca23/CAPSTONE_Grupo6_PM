@@ -1,0 +1,44 @@
+# Plantilla de configuracion de una camara. Copiarla, dibujar las ROI con
+# `python -m gymkeep_vision calibrar <video> -o config/mi_camara.yaml` y ajustar.
+
+camara:
+  codigo: CAM-01               # camaras.codigo en GymKeep
+  nombre: Camara zona cardio
+  sucursal_codigo: PM-01       # sucursal de postgres/seed.sql
+  zona_nombre: Cardio
+
+modelo:
+  pesos: yolo26n.pt            # se descarga solo a modelos/ la primera vez
+  nombre: gymkeep-usage-detector
+  version: 0.1.0
+  imgsz: 640                   # subir a 1280 si las personas se ven muy chicas
+
+# Segundos reales por segundo de video. 1.0 en una camara en vivo; un video exportado de un
+# grabador puede venir acelerado: se calibra con el reloj impreso en la imagen.
+escala_tiempo: 1.0
+
+parametros:                    # valores iniciales del estudio (§8.4.7); se calibran por camara
+  t_on_s: 30                   # MP-45: presencia continua para abrir una sesion
+  t_off_s: 90                  # MP-46: ausencia continua para cerrarla
+  confianza_min: 0.50          # MP-47: confianza minima de una persona para contar
+  gracia_s: 2                  # huecos de deteccion que no cuentan como ausencia
+  heartbeat_s: 60
+  intervalo_analisis_s: 0.2
+  criterio_zona: pie           # pie | centro | solape
+
+resolucion_referencia: [1920, 1080]   # resolucion en que se dibujaron las ROI
+
+privacidad:
+  difuminar_personas: true
+
+# ROI = zona donde apoya los pies quien USA la maquina. Poligono [[x, y], ...] o
+# rectangulo {x, y, w, h} (mismo formato que camara_equipos.roi).
+maquinas:
+  - nombre: Trotadora 01
+    codigo_activo: EQ-0001     # equipos.codigo_activo en GymKeep
+    categoria: CARDIO_MOTOR
+    roi: [[400, 600], [800, 600], [820, 900], [380, 900]]
+  - nombre: Bicicleta 01
+    codigo_activo: EQ-0002
+    categoria: CARDIO_PASIVO
+    roi: {x: 1000, y: 600, w: 400, h: 300}

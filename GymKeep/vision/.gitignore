@@ -1,0 +1,8 @@
+# Nada de esto se publica: entorno, pesos de los modelos (se descargan solos), videos,
+# resultados de corridas y material privado del equipo (analisis, pruebas, configuraciones reales).
+.venv/
+__pycache__/
+modelos/
+datos/
+salida/
+privado/

@@ -1,0 +1,43 @@
+# Pipeline de vision en Docker (CPU, no requiere GPU), sobre el docker-compose.yml del equipo.
+# Ver vision/INTEGRACION.md.
+#
+#   VISION_CAMARA=CAM-01 VISION_FUENTE=rtsp://usuario:clave@ip/stream \
+#     docker compose -f docker-compose.yml -f docker-compose.vision.yml up -d --build vision
+#
+# - VISION_CAMARA: codigo de una camara que ya existe en GymKeep (las zonas de sus maquinas se
+#   dibujan en el panel; el pipeline las relee cada 5 s).
+# - VISION_FUENTE: URL rtsp:// de la camara, o un video puesto en vision/datos/ (dentro del
+#   contenedor: /app/datos/mi_video.mp4).
+# - VISION_OPCIONES (opcional): con un video, "--tiempo-real --repetir" lo hace funcionar como
+#   una camara en vivo.
+
+services:
+  vision:
+    build: ./vision
+    image: gymkeep-vision
+    container_name: gymkeep_vision
+    restart: unless-stopped
+    # Ctrl+C (SIGINT): el pipeline cierra las sesiones abiertas antes de salir.
+    stop_signal: SIGINT
+    depends_on:
+      - api
+    environment:
+      TZ: America/Santiago
+      YOLO_CONFIG_DIR: /tmp/Ultralytics
+      VISION_CAMARA: ${VISION_CAMARA:-}
+      VISION_FUENTE: ${VISION_FUENTE:-}
+      VISION_OPCIONES: ${VISION_OPCIONES:-}
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        if [ -z "$$VISION_CAMARA" ] || [ -z "$$VISION_FUENTE" ]; then
+        echo "Definir VISION_CAMARA y VISION_FUENTE (ver docker-compose.vision.yml)"; exit 1; fi;
+        exec python -m gymkeep_vision procesar "$$VISION_FUENTE" --api http://api:8000
+        --camara "$$VISION_CAMARA" --sin-video --inicio "$$(date -Iseconds)" -o /app/salida/vivo
+        $$VISION_OPCIONES
+    volumes:
+      - ./vision/datos:/app/datos:ro
+      - vision_salida:/app/salida
+
+volumes:
+  vision_salida:
