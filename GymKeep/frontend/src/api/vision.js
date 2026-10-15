@@ -1,35 +1,6 @@
 // Cliente de /api/v1/vision: integracion del modulo de vision por computadora (camaras,
 // zonas de cada maquina, estado en vivo y tiempo de uso). Ver vision/INTEGRACION.md.
-import { BASE_URL } from './client.js'
-
-class ErrorApi extends Error {
-  constructor(mensaje, status) {
-    super(mensaje)
-    this.status = status
-  }
-}
-
-async function request(path, options = {}) {
-  const respuesta = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      ...(options.body instanceof Blob ? {} : { 'Content-Type': 'application/json' }),
-      ...options.headers,
-    },
-  })
-  if (!respuesta.ok) {
-    let detalle = respuesta.statusText
-    try {
-      const cuerpo = await respuesta.json()
-      detalle = typeof cuerpo.detail === 'string' ? cuerpo.detail : JSON.stringify(cuerpo.detail)
-    } catch {
-      // el cuerpo no era JSON
-    }
-    throw new ErrorApi(detalle, respuesta.status)
-  }
-  if (respuesta.status === 204) return null
-  return respuesta.json()
-}
+import { BASE_URL, ErrorApi, request } from './client.js'
 
 // PIN de edicion (VISION_PIN en la API): editar zonas y parametros lo pide solo si el servidor
 // responde 401. El PIN correcto se recuerda en la pestana (sessionStorage) hasta cerrarla.
@@ -94,6 +65,9 @@ export const visionApi = {
   obtenerVivo: (camaraId) => request(`/vision/camaras/${camaraId}/vivo`),
   urlCuadro: (camaraId, marca = Date.now()) => `${BASE_URL}/vision/camaras/${camaraId}/cuadro?t=${marca}`,
   subirCuadro: (camaraId, archivo) => subirImagen(`/vision/camaras/${camaraId}/cuadro`, archivo),
+
+  // Maquinas de una sucursal para el selector de zonas (el listado general trae 100 por defecto)
+  listarEquiposSucursal: (sucursalId, limite = 500) => request(`/equipamiento/?sucursal_id=${sucursalId}&limit=${limite}`),
 
   // Uso de maquinas
   listarMaquinas: () => request('/vision/maquinas'),
