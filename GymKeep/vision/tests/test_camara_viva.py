@@ -2,6 +2,7 @@
 validacion de la configuracion en caliente y rotacion del registro de presencia.
 Sin video ni YOLO: se usa un capturador falso y un modelo falso."""
 
+import os
 import sys
 import time
 import types
@@ -249,3 +250,22 @@ def test_presencia_en_vivo_archiva_lo_de_la_corrida_anterior(tmp_path):
     reg = RegistroPresencia(tmp_path / "presencia.csv", rotar=True)
     reg.cerrar()
     assert len(list(tmp_path.glob("presencia.*.csv"))) == 1
+
+
+def test_vision_hilos_limita_pytorch_y_opencv(monkeypatch):
+    import cv2
+    import torch
+
+    from gymkeep_vision.__main__ import _limitar_hilos
+
+    antes = (cv2.getNumThreads(), torch.get_num_threads())
+    monkeypatch.delenv("OPENCV_FFMPEG_CAPTURE_OPTIONS", raising=False)
+    try:
+        _limitar_hilos("2")
+        assert (cv2.getNumThreads(), torch.get_num_threads()) == (2, 2)
+        assert os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] == "threads;2"
+        _limitar_hilos(None)  # sin variable no cambia nada
+        assert torch.get_num_threads() == 2
+    finally:
+        cv2.setNumThreads(antes[0])
+        torch.set_num_threads(antes[1])
