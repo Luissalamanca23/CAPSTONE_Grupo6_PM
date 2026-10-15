@@ -4,6 +4,7 @@ import Costos from './pages/Costos.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import EquipoDetalle from './pages/EquipoDetalle.jsx'
 import Equipos from './pages/Equipos.jsx'
+import NoEncontrado from './components/NoEncontrado.jsx'
 import Incidencias from './pages/Incidencias.jsx'
 import Reportar from './pages/Reportar.jsx'
 import Sucursales from './pages/Sucursales.jsx'
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="/uso/:id" element={<UsoMaquinaDetalle />} />
         <Route path="/camaras" element={<Camaras />} />
         <Route path="/camaras/:id" element={<CamaraVista />} />
+        <Route path="*" element={<NoEncontrado />} />
       </Route>
     </Routes>
   )
