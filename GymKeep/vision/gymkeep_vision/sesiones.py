@@ -47,10 +47,17 @@ class ParametrosUso:
     # Un salto de tiempo mayor que esto entre dos observaciones (video cortado, camara
     # caida) no se suma como presencia: no se imputa uso no observado (MP-50).
     dt_max_s: float = 5.0
+    # Tope de duracion de una sesion (watchdog): una sesion abierta por mas tiempo que esto
+    # se cierra con motivo 't_max' (una persona que se queda dormida frente a la camara, un
+    # objeto quieto dentro de la ROI) y, si sigue habiendo presencia, la maquina vuelve a
+    # empezar como candidata. Por defecto 3 h.
+    t_max_s: float = 10800.0
 
     def __post_init__(self):
         if self.t_off_s <= self.gracia_s:
             raise ValueError("t_off_s debe ser mayor que gracia_s")
+        if self.t_max_s <= self.t_on_s:
+            raise ValueError("t_max_s debe ser mayor que t_on_s")
 
 
 @dataclass(frozen=True)
@@ -77,7 +84,7 @@ class Sesion:
     personas_max: int = 0
     track_ids: set[int] = field(default_factory=set)
     eventos: int = 0
-    cierre: str | None = None  # 'ausencia' | 'fin_de_video' | 'interrumpido'
+    cierre: str | None = None  # 'ausencia' | 'fin_de_video' | 'interrumpido' | 't_max' | 'sin_senal'
 
     @property
     def abierta(self) -> bool:
@@ -144,6 +151,14 @@ class MonitorMaquina:
         if self._t_prev is not None and obs.t < self._t_prev:
             raise ValueError("las observaciones deben llegar en orden de tiempo")
 
+        # Watchdog: una sesion que supera t_max_s se cierra y la observacion actual se
+        # procesa como si la maquina estuviera libre (si hay presencia, nace una candidata).
+        cierre: list[EventoUso] = []
+        if self.sesion is not None and obs.t - self.sesion.inicio >= self.p.t_max_s:
+            cierre = [self._cerrar(obs.t, "t_max")]
+        return cierre + self._avanzar(obs)
+
+    def _avanzar(self, obs: Observacion) -> list[EventoUso]:
         presente = obs.personas > 0
         dt = 0.0 if self._t_prev is None else obs.t - self._t_prev
         continua = presente and self._presente_prev and dt <= self.p.dt_max_s

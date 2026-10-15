@@ -44,6 +44,7 @@ def construir_evento(
         "parametros": {
             "t_on_s": cfg.uso.t_on_s,
             "t_off_s": cfg.uso.t_off_s,
+            "t_max_s": cfg.uso.t_max_s,
             "confianza_min": cfg.confianza_min,
             "criterio_zona": maquina.criterio or cfg.criterio_zona,
         },

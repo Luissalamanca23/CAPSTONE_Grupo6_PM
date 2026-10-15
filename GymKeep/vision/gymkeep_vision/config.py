@@ -167,6 +167,7 @@ def desde_api(datos: dict, base: Config | None = None) -> Config:
             t_on_s=parametros["t_on_s"],
             t_off_s=parametros["t_off_s"],
             gracia_s=parametros["gracia_s"],
+            t_max_s=parametros.get("t_max_s", ParametrosUso().t_max_s),
         ),
         confianza_min=parametros["confianza_min"],
         intervalo_analisis_s=base.intervalo_analisis_s if base else 0.2,

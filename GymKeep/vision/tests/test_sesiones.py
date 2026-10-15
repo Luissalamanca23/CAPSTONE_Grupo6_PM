@@ -131,3 +131,33 @@ def test_salto_de_tiempo_no_se_imputa_como_presencia():
 def test_t_off_debe_superar_la_gracia():
     with pytest.raises(ValueError):
         ParametrosUso(t_off_s=1, gracia_s=2)
+
+
+def test_sesion_que_supera_t_max_se_cierra_y_la_presencia_reinicia_como_candidata():
+    p = ParametrosUso(t_on_s=30, t_off_s=90, gracia_s=2, heartbeat_s=60, t_max_s=300)
+    monitor, eventos = simular([(0, 500)], parametros=p, t_final=500)
+    cierres = [e for e in eventos if e.tipo == "fin_uso"]
+    assert cierres[0].sesion.cierre == "t_max"
+    assert cierres[0].t == pytest.approx(299.8, abs=0.3)  # ultima presencia antes del corte
+    # La presencia continua: la maquina empieza otra vez (T_on se aplica de nuevo) y la
+    # segunda sesion se cierra al terminar el video.
+    assert tipos(eventos).count("inicio_uso") == 2
+    assert monitor.sesiones[1].inicio == pytest.approx(300, abs=0.3)
+    assert monitor.sesiones[1].cierre == "fin_de_video"
+
+
+def test_t_max_sin_presencia_posterior_deja_la_maquina_libre():
+    p = ParametrosUso(t_on_s=30, t_off_s=90, gracia_s=2, heartbeat_s=60, t_max_s=300)
+    monitor = MonitorMaquina(p)
+    for i in range(0, 300):  # 299 s encima
+        monitor.actualizar(Observacion(t=float(i), personas=1, confianza=0.9))
+    assert monitor.estado == Estado.EN_USO
+    eventos = monitor.actualizar(Observacion(t=301.0, personas=0))
+    assert tipos(eventos) == ["fin_uso"] and eventos[0].sesion.cierre == "t_max"
+    assert monitor.estado == Estado.LIBRE
+
+
+def test_t_max_debe_ser_mayor_que_t_on():
+    with pytest.raises(ValueError):
+        ParametrosUso(t_on_s=30, t_max_s=20)
+    assert ParametrosUso().t_max_s == 10800
