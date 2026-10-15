@@ -223,6 +223,30 @@ npm run dev
 
 Panel en `http://localhost:5173`.
 
+El frontend llama a la API en `http://localhost:8000/api/v1` por defecto. Para apuntarlo a
+otra URL (por ejemplo, el servidor de producción) define `VITE_API_URL` en
+`frontend/.env` **antes** de `npm run dev` o `npm run build` (Vite la incrusta al compilar):
+
+```bash
+VITE_API_URL=https://gymkeep.ejemplo.cl/api/v1
+```
+
+### Producción con Docker
+
+`docker-compose.prod.yml` es un override de `docker-compose.yml` (no lo reemplaza):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+Requiere Docker Compose 2.24 o superior. Diferencias con desarrollo: la API usa el código
+de la imagen (no se monta `./app`) y arranca sin `--reload`; Postgres y Mongo solo escuchan
+en `127.0.0.1`; y las claves son obligatorias (sin valores por defecto). Si falta alguna,
+`docker compose` se detiene con un mensaje. Hay que definir en el `.env`:
+`POSTGRES_PASSWORD`, `MONGO_ROOT_PASSWORD`, `FRONTEND_URL`, `VISION_PIN` y
+`VISION_PIPELINE_KEY`. La imagen de la API corre con un usuario sin privilegios y declara un
+`HEALTHCHECK` contra `/health`.
+
 ### Notas según tu terminal (Windows)
 
 - **PowerShell** no soporta `<` para redirigir un archivo a un comando. Si necesitas pasar
@@ -277,13 +301,27 @@ equipos/zonas; las incidencias simplemente se suman).
 
 ```bash
 cd GymKeep
-pip install -r requirements.txt   # incluye pymongo y boto3, usados por app.core.mongo/storage
+pip install -r requirements-dev.txt   # requirements.txt + pytest y httpx
 pytest
 ```
+
+`requirements.txt` trae solo lo necesario para ejecutar la API (es lo que instala el
+Dockerfile); las herramientas de prueba están en `requirements-dev.txt`. El workflow
+`.github/workflows/ci.yml` corre los tests del backend, los del módulo de visión y el build
+del frontend en cada push a `main` y en cada pull request.
 
 Los tests usan SQLite en memoria (no necesitan Docker/Postgres/Mongo corriendo).
 `pytest.ini` limita esta corrida a `tests/`: el módulo de visión tiene sus propios tests y
 su propio entorno (`cd vision && .venv/bin/python -m pytest`, ver `vision/README.md`).
+
+## Política de esquema de base de datos
+
+La fuente de verdad del esquema es `postgres/schema.sql` (se carga al crear el volumen de
+Postgres). Los modelos de `app/models/gymkeep.py` deben mantenerse alineados con ese
+archivo. **Alembic no está configurado** en este proyecto: un cambio de esquema se hace
+editando `schema.sql` y, en una base ya creada, aplicando el cambio a mano con SQL (o
+recreando el volumen en desarrollo). Los tests no usan `schema.sql`: crean las tablas desde
+los modelos sobre SQLite.
 
 ## Notas / problemas conocidos
 
@@ -301,7 +339,7 @@ su propio entorno (`cd vision && .venv/bin/python -m pytest`, ver `vision/README
   (`app/core/storage.py::subir_evidencia`) para guardar snapshots/clips de evidencia —
   evaluar alternativas a MinIO dado el problema de distribución mencionado arriba.
 - Autenticación para el panel.
-- Migrar a Alembic para versionar cambios de esquema sin tener que resetear la base de
+- Configurar Alembic (hoy el esquema se gestiona solo con `postgres/schema.sql`) para versionar cambios de esquema sin tener que resetear la base de
   datos cada vez (el paquete `GymKeep_BDD_Completa/alembic/` trae un punto de partida).
 - Soporte real para múltiples sucursales en el frontend, si el proyecto lo llega a
   necesitar.
