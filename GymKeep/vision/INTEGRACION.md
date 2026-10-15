@@ -124,7 +124,7 @@ Estados de una máquina:
 
 ```bash
 cd GymKeep/vision
-.venv/bin/python -m gymkeep_vision procesar rtsp://usuario:clave@ip/stream \
+.venv/bin/python -m gymkeep_vision procesar rtsp://IP_DE_LA_CAMARA/RUTA \
     --api http://localhost:8000 --camara CAM-01 --sin-video
 ```
 
@@ -132,7 +132,7 @@ O con Docker (CPU, sin GPU), sobre el compose del equipo:
 
 ```bash
 cd GymKeep
-VISION_CAMARA=CAM-01 VISION_FUENTE=rtsp://usuario:clave@ip/stream \
+VISION_CAMARA=CAM-01 VISION_FUENTE=rtsp://IP_DE_LA_CAMARA/RUTA \
   docker compose -f docker-compose.yml -f docker-compose.vision.yml up -d --build vision
 ```
 
@@ -143,6 +143,24 @@ VISION_CAMARA=CAM-01 VISION_FUENTE=rtsp://usuario:clave@ip/stream \
   - En Docker: `VISION_FUENTE=/app/datos/mi_video.mp4` y
     `VISION_OPCIONES="--tiempo-real --repetir"` (el compose ya agrega `--inicio`).
 - El envío en vivo corre en un hilo aparte: si la API se cae, el análisis sigue y se reintenta.
+- Clave del pipeline: si la API define `VISION_PIPELINE_KEY`, el pipeline la envía en la
+  cabecera `X-Pipeline-Key` de todas sus llamadas. La toma de la variable de entorno
+  `VISION_PIPELINE_KEY` o de `--clave-pipeline` (en `procesar` y `enviar`). En Docker se define
+  en el `.env`, con el mismo valor que en la API.
+- Eventos: se encolan y los envía un hilo aparte, con reintentos cada vez más espaciados (1, 2,
+  4… hasta 30 s) y en orden. Los que no llegan quedan en `<salida>/eventos_pendientes.jsonl` y
+  se reintentan al volver a arrancar con la misma carpeta (en Docker, el volumen
+  `vision_salida`). Al cerrar se espera hasta 15 s por lo pendiente. `eventos.jsonl` se abre en
+  modo append y conserva el historial entre reinicios.
+- Cámara en vivo: si se corta la señal, el pipeline reabre la conexión con esperas de 1 a 30 s.
+  Si el corte dura más de `t_off_s`, cierra las sesiones abiertas con `metadata.cierre =
+  "sin_senal"`.
+- Sesiones largas: una sesión que supera `t_max_s` (3 h por defecto) se cierra con `cierre =
+  "t_max"`; si sigue habiendo presencia, empieza otra (aplicando T_on).
+- Operación 24/7: `presencia.csv` rota por día o a los 50 MB (guarda 7 archivos) y en memoria
+  quedan solo los últimos 1000 eventos.
+- Si el panel entrega parámetros incoherentes (por ejemplo `t_off_s` no mayor que `gracia_s`),
+  el pipeline lo registra como aviso, aplica las zonas y conserva los parámetros anteriores.
 - `docker stop` (o Ctrl+C) cierra las sesiones abiertas antes de salir.
 - La imagen que se envía va sin anotaciones (el panel dibuja las suyas) y con las cabezas
   y los rostros difuminados (ver la sección 10, punto 1).
@@ -275,15 +293,14 @@ curl -X PUT localhost:8000/api/v1/vision/camaras/2/maquinas/1 -H 'Content-Type: 
      (300 s; el pipeline emite `uso_en_curso` cada 60 s). La hora que se mide es la de recepción
      en la API. Con eventos intermedios la sesión se cierra en el último (`metadata.cierre =
      "watchdog"`); si solo tuvo el inicio, queda `descartada`.
-   - La API entrega `t_max_s` en los parámetros y en la configuración del pipeline. El corte de
-     una sesión que supera `t_max_s` se aplica en el pipeline, que debe leer ese campo.
+   - T_max: la API entrega `t_max_s` en la configuración y el pipeline corta la sesión que lo
+     supera (sección 6).
    - Un índice único parcial (`ux_sesiones_uso_abierta`, en `schema.sql`) impide dos sesiones
      abiertas de la misma máquina y cámara. En una base existente se crea con el `CREATE UNIQUE
      INDEX` de `schema.sql`, tras cerrar las sesiones abiertas duplicadas si las hubiera.
-6. **Clave del pipeline.** La API la exige si `VISION_PIPELINE_KEY` está definida. El pipeline
-   debe enviarla en la cabecera `X-Pipeline-Key` en cada llamada a la API (configuración, estado
-   en vivo, cuadro y eventos); mientras no lo haga, la clave debe quedar vacía. Es una clave
-   compartida, no identifica a cada cámara.
+6. **Clave del pipeline.** La API la exige si `VISION_PIPELINE_KEY` está definida y el pipeline
+   la envía en `X-Pipeline-Key` (sección 6). Es una clave compartida: no identifica a cada
+   cámara.
 7. **MinIO.** Las fotos y la imagen en vivo quedaron en Mongo porque el contenedor de MinIO no se
    puede descargar. Si se habilita, conviene mover ahí las fotos y dejar en Mongo solo la
    referencia.

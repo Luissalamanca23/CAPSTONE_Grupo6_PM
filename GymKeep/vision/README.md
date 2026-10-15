@@ -66,7 +66,10 @@ vino de `--inicio`.
 
 Otras opciones: `--max-segundos 120` (prueba corta), `--desde 300`, `--sin-video` (más rápido), `--mostrar` (ventana en vivo),
 `--t-on / --t-off / --confianza / --escala-tiempo` (sobrescriben el YAML).
-La fuente también puede ser una cámara: `rtsp://usuario:clave@ip/stream` o `0` (webcam).
+La fuente también puede ser una cámara: `rtsp://IP_DE_LA_CAMARA/RUTA` o `0` (webcam). Si se corta
+la señal, el pipeline reintenta solo (1 a 30 s); pasados `t_off_s` segundos sin cuadros cierra
+las sesiones con motivo `sin_senal`. Con `--api`, la clave del pipeline se pasa con
+`--clave-pipeline` o la variable `VISION_PIPELINE_KEY` (también en `enviar`).
 
 ### 2. Enviar a GymKeep
 
@@ -83,7 +86,8 @@ Con el backend levantado (`docker compose up -d db mongo api` en `GymKeep/`):
 ```
 
 `--registrar` crea en GymKeep la cámara, los equipos (`codigo_activo`) y el modelo que falten.
-Reenviar es seguro: la API es idempotente por `event_uuid`. Resultado en `GET /api/v1/sesiones-uso/`
+Los eventos que la API no alcanzó a recibir quedan en `<salida>/eventos_pendientes.jsonl` y se
+reintentan solos al volver a procesar con la misma carpeta. Reenviar es seguro: la API es idempotente por `event_uuid`. Resultado en `GET /api/v1/sesiones-uso/`
 y `GET /api/v1/sesiones-uso/horometro` (`http://localhost:8000/docs`).
 
 ### 3. Calibrar parámetros sin volver a correr YOLO
@@ -119,7 +123,7 @@ avisa que su uso puede quedar subestimado. Conviene una cámara elevada.
 ### 5. En vivo, con la plataforma
 
 ```bash
-.venv/bin/python -m gymkeep_vision procesar rtsp://usuario:clave@ip/stream \
+.venv/bin/python -m gymkeep_vision procesar rtsp://IP_DE_LA_CAMARA/RUTA \
     --api http://localhost:8000 --camara CAM-01 --sin-video
 ```
 
@@ -141,6 +145,7 @@ Plantilla comentada: [`config/ejemplo_camara.yaml`](config/ejemplo_camara.yaml).
 | `parametros.t_off_s` | Ausencia continua para cerrarla (MP-46); debe superar el descanso entre series | 90 s |
 | `parametros.confianza_min` | Confianza mínima de una persona para contar (MP-47) | 0,50 |
 | `parametros.gracia_s` | Huecos de detección que no cuentan como ausencia | 2 s |
+| `parametros.t_max_s` | Duración máxima de una sesión: al superarla se cierra (`t_max`) y, si sigue habiendo presencia, empieza otra | 10800 s |
 | `parametros.intervalo_analisis_s` | Cada cuánto se analiza un cuadro | 0,2 s |
 | `parametros.criterio_zona` | `pie` (centro inferior de la persona), `centro` o `solape` | `pie` |
 | `escala_tiempo` | Segundos reales por segundo de video (videos de grabador acelerados) | 1,0 |
