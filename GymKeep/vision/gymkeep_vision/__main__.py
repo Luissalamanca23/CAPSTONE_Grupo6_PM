@@ -246,7 +246,29 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s", datefmt="%H:%M:%S")
+    _limitar_hilos(os.environ.get("VISION_HILOS"))
     return args.func(args)
+
+
+def _limitar_hilos(valor: str | None) -> None:
+    """Con varias camaras en el mismo equipo, cada pipeline usa por defecto tantos hilos como
+    nucleos (PyTorch, OpenCV y el decodificador de video) y se estorban entre si. VISION_HILOS
+    fija ese numero por pipeline (ej. 2); sin la variable se deja el comportamiento por defecto.
+
+    Ademas, los hilos de OpenMP esperan dormidos (OMP_WAIT_POLICY=PASSIVE): por defecto giran
+    activos esperando trabajo y, con varios pipelines en el mismo equipo, se bloquean entre
+    si (medido: 35 ms por cuadro con espera pasiva frente a 6 s con espera activa, 6 camaras)."""
+    if not valor:
+        return
+    hilos = max(1, int(valor))
+    os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")  # antes de importar torch
+    os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", f"threads;{hilos}")
+    import cv2
+    import torch
+
+    cv2.setNumThreads(hilos)
+    torch.set_num_threads(hilos)
+    logging.getLogger(__name__).info("Hilos por pipeline: %d", hilos)
 
 
 if __name__ == "__main__":
