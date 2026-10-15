@@ -12,7 +12,7 @@ guardado en MongoDB.
 | Pipeline en vivo: lee las zonas de la plataforma, envía su estado cada 1 s y la imagen cada 2 s, y aplica cambios de zonas sin reiniciarse | `vision/` (con tests) |
 | Registro en vivo en MongoDB: `camaras_vivo`, `detecciones_raw`, `telemetria_camaras`, `fotos_equipos` | Base `gymkeep_ai` |
 | Pipeline en Docker (CPU, sin GPU) | `docker-compose.vision.yml` |
-| Pantallas del panel web | Diseño en la sección 7 |
+| Pantallas del panel web: "Uso de máquinas" y "Cámaras" | `frontend/src/pages/vision/` y `frontend/src/api/vision.js` (sección 7) |
 
 ## 2. Flujo
 
@@ -139,7 +139,9 @@ VISION_CAMARA=CAM-01 VISION_FUENTE=rtsp://usuario:clave@ip/stream \
 
 ## 7. Pantallas del panel web
 
-Propuesta: dos secciones nuevas en el menú, "Uso de máquinas" y "Cámaras".
+Dos secciones en el menú, "Uso de máquinas" (`/uso`, `/uso/:id`) y "Cámaras" (`/camaras`,
+`/camaras/:id`), implementadas en `frontend/src/pages/vision/`. Las llamadas a la API están en
+`frontend/src/api/vision.js`.
 
 ### 7.1 Uso de máquinas: `GET /vision/maquinas`
 
@@ -196,13 +198,14 @@ Propuesta: dos secciones nuevas en el menú, "Uso de máquinas" y "Cámaras".
 - "Subir imagen de referencia" (`PUT .../cuadro`) y el comando para iniciar el pipeline cuando la
   cámara no tiene señal.
 
-Colores sugeridos (los mismos del video anotado del pipeline): verde = libre, ámbar = detectando,
+Colores (los mismos del video anotado del pipeline): verde = libre, ámbar = detectando,
 azul = sesión abierta (en uso o en pausa).
 
 ## 8. Cómo probar
 
 ```bash
 cd GymKeep && docker compose up -d db mongo api
+# Panel web: cd frontend && npm install && npm run dev, y abrir "Uso de máquinas" o "Cámaras"
 # 1) Crear una cámara (o usar CAM-01 de seed.sql)
 curl -X POST localhost:8000/api/v1/camaras/ -H 'Content-Type: application/json' \
   -d '{"codigo": "CAM-02", "nombre": "Camara de prueba", "sucursal_id": 1}'
