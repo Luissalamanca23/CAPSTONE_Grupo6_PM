@@ -71,6 +71,12 @@ de la resolución del video.
 
 Documentados en `http://localhost:8000/docs`, sección "Vision (integracion)".
 
+Dos protecciones, ambas opcionales (vacías = abiertas, para desarrollo):
+
+- **PIN de edición** (`VISION_PIN`, cabecera `X-Vision-Pin`): lo usa el panel para editar.
+- **Clave del pipeline** (`VISION_PIPELINE_KEY`, cabecera `X-Pipeline-Key`): la usa el pipeline en
+  los endpoints que solo él consume y en `POST /eventos-ia/`. Se compara en tiempo constante.
+
 | Método y ruta | Lo usa | Qué hace |
 |---|---|---|
 | `GET /pin` | panel | `{"requerido": true}` si editar zonas y parámetros pide PIN |
@@ -79,16 +85,18 @@ Documentados en `http://localhost:8000/docs`, sección "Vision (integracion)".
 | `GET /camaras/{id}` | panel | Detalle: `lista_maquinas` (con su `roi`) y `parametros` |
 | `PUT /camaras/{id}/maquinas/{equipo_id}` | panel (con PIN) | Crea o reemplaza la zona. Cuerpo: `{"puntos": [[0.1, 0.5], [0.4, 0.5], [0.4, 0.9]]}` (3 a 40 puntos, entre 0 y 1). La máquina debe ser de la misma sucursal. Una máquina nueva se crea antes con `POST /equipamiento/` |
 | `DELETE /camaras/{id}/maquinas/{equipo_id}` | panel (con PIN) | Quita la máquina de la cámara; el equipo sigue en el inventario |
-| `PUT /camaras/{id}/parametros` | panel (con PIN) | `{"t_on_s": 30, "t_off_s": 90, "confianza_min": 0.5, "gracia_s": 2, "escala_tiempo": 1}`; valida que T_off sea mayor que la gracia |
-| `GET /camaras/{id}/configuracion` | pipeline | Máquinas activas con zona, más los parámetros |
-| `POST /camaras/{id}/vivo` | pipeline | Estado en vivo (ejemplo abajo) → Mongo y `ultima_conexion` |
+| `PUT /camaras/{id}/parametros` | panel (con PIN) | `{"t_on_s": 30, "t_off_s": 90, "confianza_min": 0.5, "gracia_s": 2, "escala_tiempo": 1, "t_max_s": 10800}`; valida que T_off sea mayor que la gracia. `t_max_s` (600 a 86400, por defecto 10800) es la duración máxima de una sesión; si se omite se usa el valor por defecto |
+| `GET /camaras/{id}/configuracion` | pipeline (con clave) | Máquinas activas con zona, más los parámetros (incluido `t_max_s`) |
+| `POST /camaras/{id}/vivo` | pipeline (con clave) | Estado en vivo (ejemplo abajo) → Mongo y `ultima_conexion`. No cambia el `estado` de una cámara en `mantenimiento` o `inactiva` |
+| `POST /eventos-ia/` | pipeline (con clave) | Eventos de IA (`inicio_uso`, `uso_en_curso`, `fin_uso`...), idempotente por `event_uuid` |
 | `GET /camaras/{id}/vivo` | panel | Último estado, con `en_linea` (falso si no llegan datos hace más de 15 s) y `edad_s` |
-| `PUT /camaras/{id}/cuadro` | pipeline y panel | Imagen (cuerpo JPEG o PNG, máx. 5 MB y 40 megapíxeles; se guarda en JPEG de hasta 1280 px). Desde el panel sirve para subir una imagen de referencia y dibujar zonas sin pipeline |
+| `PUT /camaras/{id}/cuadro` | pipeline (con clave) o panel (con PIN) | Acepta cualquiera de las dos credenciales. Imagen (cuerpo JPEG o PNG, máx. 5 MB y 40 megapíxeles; se guarda en JPEG de hasta 1280 px). Desde el panel sirve para subir una imagen de referencia y dibujar zonas sin pipeline |
 | `GET /camaras/{id}/cuadro` | panel | Última imagen (`image/jpeg`, sin caché) |
 | `GET /maquinas` | panel | Por máquina: `horas_uso` (horómetro), `horas_ultimos_7_dias`, `sesiones`, `ultima_sesion`, `ultima_mantencion`, `horas_desde_mantencion`, `incidencias_abiertas`, `camaras`, `medido_por_camara`, `en_uso_ahora`, `estado_vivo`, `tiene_foto` |
 | `GET /maquinas/{id}` | panel | Historial en una llamada: `resumen`, `uso_diario` (30 días), `sesiones`, `incidencias`, `mantenciones` |
-| `GET` y `PUT /maquinas/{id}/foto` | panel | Foto de referencia (JPEG) |
-| `POST /maquinas/{id}/foto/desde-camara` | panel | Recorta la zona de la máquina del último cuadro y la guarda como foto (409 si no hay imagen o zona) |
+| `GET /maquinas/{id}/foto` | panel | Foto de referencia (JPEG) |
+| `PUT /maquinas/{id}/foto` | panel (con PIN) | Sube la foto de referencia |
+| `POST /maquinas/{id}/foto/desde-camara` | panel (con PIN) | Recorta la zona de la máquina del último cuadro y la guarda como foto (409 si no hay imagen o zona) |
 
 Lo que envía el pipeline cada segundo (`POST /camaras/{id}/vivo`):
 
@@ -220,6 +228,8 @@ curl -X PUT localhost:8000/api/v1/vision/camaras/2/maquinas/1 -H 'Content-Type: 
 
 ## 9. Pruebas automáticas
 
+- Backend, `tests/test_vision_clave.py` (clave del pipeline, PIN en fotos, `t_max_s`) y
+  `tests/test_vision_sesiones.py` (watchdog, carreras al consolidar sesiones, consultas del panel).
 - Backend, `tests/test_vision_api.py` (SQLite + Mongo falso, sin Docker):
   - Zonas: dibujar, editar y quitar; validaciones; sucursal distinta.
   - Parámetros.
@@ -259,10 +269,22 @@ curl -X PUT localhost:8000/api/v1/vision/camaras/2/maquinas/1 -H 'Content-Type: 
 4. **Una cámara principal por máquina** (brecha B-54 del estudio). Si dos cámaras miran la misma
    máquina, las dos generan sesiones. El horómetro no cuenta doble (unión de intervalos), pero el
    conteo de sesiones sí se duplica.
-5. **Watchdog de sesiones largas** (T_max, §6.6.5 del estudio). Una sesión sin pausas mayores a
-   T_off no se corta nunca. Si el pipeline se corta sin enviar `fin_uso`, la sesión queda abierta
-   hasta el siguiente `inicio_uso` de esa máquina.
-6. **MinIO.** Las fotos y la imagen en vivo quedaron en Mongo porque el contenedor de MinIO no se
+5. **Sesiones huérfanas y T_max** (§6.6.5 del estudio).
+   - Resuelto en la API: una tarea periódica (`VISION_WATCHDOG_S`, 60 s por defecto; 0 la
+     desactiva) cierra las sesiones `abierta` sin eventos desde hace más de 5 latidos
+     (300 s; el pipeline emite `uso_en_curso` cada 60 s). La hora que se mide es la de recepción
+     en la API. Con eventos intermedios la sesión se cierra en el último (`metadata.cierre =
+     "watchdog"`); si solo tuvo el inicio, queda `descartada`.
+   - La API entrega `t_max_s` en los parámetros y en la configuración del pipeline. El corte de
+     una sesión que supera `t_max_s` se aplica en el pipeline, que debe leer ese campo.
+   - Un índice único parcial (`ux_sesiones_uso_abierta`, en `schema.sql`) impide dos sesiones
+     abiertas de la misma máquina y cámara. En una base existente se crea con el `CREATE UNIQUE
+     INDEX` de `schema.sql`, tras cerrar las sesiones abiertas duplicadas si las hubiera.
+6. **Clave del pipeline.** La API la exige si `VISION_PIPELINE_KEY` está definida. El pipeline
+   debe enviarla en la cabecera `X-Pipeline-Key` en cada llamada a la API (configuración, estado
+   en vivo, cuadro y eventos); mientras no lo haga, la clave debe quedar vacía. Es una clave
+   compartida, no identifica a cada cámara.
+7. **MinIO.** Las fotos y la imagen en vivo quedaron en Mongo porque el contenedor de MinIO no se
    puede descargar. Si se habilita, conviene mover ahí las fotos y dejar en Mongo solo la
    referencia.
 

@@ -1,10 +1,24 @@
+import contextlib
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
+from app.core import watchdog
 from app.core.config import settings
 
-app = FastAPI(title=settings.project_name)
+
+@contextlib.asynccontextmanager
+async def lifespan(_: FastAPI):
+    tarea = watchdog.iniciar()
+    try:
+        yield
+    finally:
+        if tarea is not None:
+            tarea.cancel()
+
+
+app = FastAPI(title=settings.project_name, lifespan=lifespan)
 
 # El Portal de Reporte Express (formulario del QR) lo puede abrir cualquier persona,
 # desde cualquier red (celular por datos moviles, tunel publico, etc.), y esta API no

@@ -20,7 +20,8 @@ class ColeccionFalsa:
         self.docs = {}
 
     def find(self, filtro=None, proyeccion=None):
-        return [dict(d) for d in self.docs.values()]
+        ids = ((filtro or {}).get("_id") or {}).get("$in")
+        return [dict(d) for d in self.docs.values() if ids is None or d["_id"] in ids]
 
     def find_one(self, filtro, proyeccion=None):
         doc = self.docs.get(filtro["_id"])
