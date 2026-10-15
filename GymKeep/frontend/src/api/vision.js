@@ -34,7 +34,7 @@ async function conPin(path, options) {
   let pin = leerPin()
   for (;;) {
     try {
-      const resultado = await request(path, { ...options, headers: pin ? { 'X-Vision-Pin': pin } : {} })
+      const resultado = await request(path, { ...options, headers: { ...options.headers, ...(pin ? { 'X-Vision-Pin': pin } : {}) } })
       if (pin) recordarPin(pin)
       return resultado
     } catch (err) {
@@ -47,7 +47,7 @@ async function conPin(path, options) {
 }
 
 function subirImagen(path, archivo) {
-  return request(path, { method: 'PUT', body: archivo, headers: { 'Content-Type': archivo.type || 'image/jpeg' } })
+  return conPin(path, { method: 'PUT', body: archivo, headers: { 'Content-Type': archivo.type || 'image/jpeg' } })
 }
 
 export const visionApi = {
@@ -74,5 +74,5 @@ export const visionApi = {
   obtenerMaquina: (id) => request(`/vision/maquinas/${id}`),
   urlFoto: (id, marca = '') => `${BASE_URL}/vision/maquinas/${id}/foto?t=${marca}`,
   subirFoto: (id, archivo) => subirImagen(`/vision/maquinas/${id}/foto`, archivo),
-  fotoDesdeCamara: (id) => request(`/vision/maquinas/${id}/foto/desde-camara`, { method: 'POST' }),
+  fotoDesdeCamara: (id) => conPin(`/vision/maquinas/${id}/foto/desde-camara`, { method: 'POST' }),
 }

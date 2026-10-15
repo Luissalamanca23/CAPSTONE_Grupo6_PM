@@ -20,9 +20,9 @@ EN_5_MIN = "2026-09-26T18:05:00-03:00"
 
 @pytest.fixture()
 def indice_unico(db_session):
-    """El mismo indice parcial que postgres/schema.sql (los tests crean las tablas desde los modelos)."""
+    """Indice parcial de postgres/schema.sql (tambien declarado en el modelo SesionUso)."""
     db_session.execute(
-        text("CREATE UNIQUE INDEX ux_sesiones_uso_abierta ON sesiones_uso(equipo_id, camara_id) WHERE estado = 'abierta'")
+        text("CREATE UNIQUE INDEX IF NOT EXISTS ux_sesiones_uso_abierta ON sesiones_uso(equipo_id, camara_id) WHERE estado = 'abierta'")
     )
     db_session.commit()
 

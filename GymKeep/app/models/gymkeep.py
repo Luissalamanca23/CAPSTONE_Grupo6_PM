@@ -24,6 +24,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -32,6 +33,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -394,6 +396,18 @@ class SesionUso(Base):
     metadata_json = Column("metadata", JSONVariant, nullable=False, default=dict)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Una sola sesion abierta por maquina y camara (mismo indice que postgres/schema.sql).
+    __table_args__ = (
+        Index(
+            "ux_sesiones_uso_abierta",
+            "equipo_id",
+            "camara_id",
+            unique=True,
+            postgresql_where=text("estado = 'abierta'"),
+            sqlite_where=text("estado = 'abierta'"),
+        ),
+    )
 
     equipo = relationship("Equipo", back_populates="sesiones_uso")
     camara = relationship("Camara")
