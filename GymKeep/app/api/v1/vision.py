@@ -15,6 +15,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.pin import pin_requerido, verificar_pin
+from app.core.pipeline_key import verificar_clave_o_pin, verificar_clave_pipeline
 from app.models.gymkeep import Camara, Equipo
 from app.schemas.vision import (
     CamaraVisionDetalle,
@@ -51,10 +53,34 @@ def _equipo(db: Session, equipo_id: int) -> Equipo:
 
 
 async def _leer_imagen(request: Request) -> bytes:
-    contenido = await request.body()
-    if len(contenido) > MAX_BYTES_IMAGEN:
-        raise HTTPException(status_code=413, detail="La imagen supera los 5 MB.")
-    return contenido
+    """Lee el cuerpo por partes y corta apenas supera el limite (no carga en memoria un
+    archivo gigante para recien despues rechazarlo)."""
+    demasiado_grande = HTTPException(status_code=413, detail="La imagen supera los 5 MB.")
+    declarado = request.headers.get("content-length")
+    if declarado and declarado.isdigit() and int(declarado) > MAX_BYTES_IMAGEN:
+        raise demasiado_grande
+    contenido = bytearray()
+    async for parte in request.stream():
+        contenido += parte
+        if len(contenido) > MAX_BYTES_IMAGEN:
+            raise demasiado_grande
+    return bytes(contenido)
+
+
+# ---------------------------------------------------------------- PIN de edicion
+
+
+@router.get("/pin")
+def estado_pin():
+    """Si editar zonas y parametros pide PIN (el panel lo pregunta solo cuando hace falta)."""
+    return {"requerido": pin_requerido()}
+
+
+@router.post("/pin/verificar", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verificar_pin)])
+def comprobar_pin():
+    """204 si el PIN de la cabecera X-Vision-Pin es correcto; 401 si no; 429 si la IP esta
+    bloqueada por intentos fallidos."""
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------- camaras y zonas
@@ -74,7 +100,7 @@ def obtener_camara(camara_id: int, db: Session = Depends(get_db)):
     return servicio.detalle_camara(db, _camara(db, camara_id))
 
 
-@router.put("/camaras/{camara_id}/maquinas/{equipo_id}", response_model=MaquinaEnCamara)
+@router.put("/camaras/{camara_id}/maquinas/{equipo_id}", response_model=MaquinaEnCamara, dependencies=[Depends(verificar_pin)])
 def guardar_zona(camara_id: int, equipo_id: int, roi: RoiIn, db: Session = Depends(get_db)):
     """Crea o reemplaza la zona de una maquina en esta camara (lo que el operador dibuja sobre
     la imagen). La maquina debe ser de la misma sucursal que la camara. Para agregar una
@@ -85,7 +111,7 @@ def guardar_zona(camara_id: int, equipo_id: int, roi: RoiIn, db: Session = Depen
     return servicio.guardar_roi(db, camara, equipo, roi.puntos)
 
 
-@router.delete("/camaras/{camara_id}/maquinas/{equipo_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/camaras/{camara_id}/maquinas/{equipo_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verificar_pin)])
 def quitar_zona(camara_id: int, equipo_id: int, db: Session = Depends(get_db)):
     """Quita la maquina de esta camara (el equipo sigue existiendo en el inventario)."""
     if not servicio.quitar_maquina(db, _camara(db, camara_id), equipo_id):
@@ -93,14 +119,14 @@ def quitar_zona(camara_id: int, equipo_id: int, db: Session = Depends(get_db)):
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.put("/camaras/{camara_id}/parametros", response_model=ParametrosVision)
+@router.put("/camaras/{camara_id}/parametros", response_model=ParametrosVision, dependencies=[Depends(verificar_pin)])
 def guardar_parametros(camara_id: int, parametros: ParametrosVision, db: Session = Depends(get_db)):
     """Guarda los parametros de deteccion de esta camara (T_on, T_off, confianza minima,
     gracia, escala de tiempo). El pipeline los toma en su proxima lectura de configuracion."""
     return servicio.guardar_parametros(db, _camara(db, camara_id), parametros)
 
 
-@router.get("/camaras/{camara_id}/configuracion", response_model=ConfiguracionPipeline)
+@router.get("/camaras/{camara_id}/configuracion", response_model=ConfiguracionPipeline, dependencies=[Depends(verificar_clave_pipeline)])
 def configuracion_pipeline(camara_id: int, db: Session = Depends(get_db)):
     """Para el pipeline: maquinas activas con zona y parametros. El pipeline la vuelve a leer
     cada pocos segundos, asi una zona dibujada en el panel se aplica sin reiniciarlo."""
@@ -110,7 +136,7 @@ def configuracion_pipeline(camara_id: int, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------- en vivo (pipeline -> Mongo)
 
 
-@router.post("/camaras/{camara_id}/vivo", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/camaras/{camara_id}/vivo", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(verificar_clave_pipeline)])
 def registrar_vivo(camara_id: int, estado: EstadoVivoIn, db: Session = Depends(get_db)):
     """El pipeline informa lo que ve (cada ~1 s): estado de cada maquina y personas
     detectadas. Queda en MongoDB (`camaras_vivo`, `detecciones_raw`, `telemetria_camaras`) y
@@ -127,7 +153,7 @@ def obtener_vivo(camara_id: int, db: Session = Depends(get_db)):
     return servicio.estado_vivo(camara_id)
 
 
-@router.put("/camaras/{camara_id}/cuadro", status_code=status.HTTP_201_CREATED)
+@router.put("/camaras/{camara_id}/cuadro", status_code=status.HTTP_201_CREATED, dependencies=[Depends(verificar_clave_o_pin)])
 async def subir_cuadro(camara_id: int, request: Request, db: Session = Depends(get_db)):
     """Ultima imagen de la camara (cuerpo = JPEG o PNG). La envia el pipeline cada pocos
     segundos con las cabezas ya difuminadas; tambien sirve para subir una imagen de
@@ -176,7 +202,7 @@ def obtener_foto(equipo_id: int, db: Session = Depends(get_db)):
     return Response(content=contenido, media_type="image/jpeg", headers=SIN_CACHE)
 
 
-@router.put("/maquinas/{equipo_id}/foto", status_code=status.HTTP_201_CREATED)
+@router.put("/maquinas/{equipo_id}/foto", status_code=status.HTTP_201_CREATED, dependencies=[Depends(verificar_pin)])
 async def subir_foto(equipo_id: int, request: Request, db: Session = Depends(get_db)):
     """Sube la foto de referencia (cuerpo = JPEG o PNG)."""
     _equipo(db, equipo_id)
@@ -186,7 +212,7 @@ async def subir_foto(equipo_id: int, request: Request, db: Session = Depends(get
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/maquinas/{equipo_id}/foto/desde-camara", status_code=status.HTTP_201_CREATED)
+@router.post("/maquinas/{equipo_id}/foto/desde-camara", status_code=status.HTTP_201_CREATED, dependencies=[Depends(verificar_pin)])
 def foto_desde_camara(equipo_id: int, camara_id: Optional[int] = None, db: Session = Depends(get_db)):
     """Toma la foto de referencia recortando la zona de la maquina del ultimo cuadro de la
     camara (o de `camara_id`, si la mira mas de una)."""

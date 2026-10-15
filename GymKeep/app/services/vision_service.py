@@ -18,12 +18,13 @@ from __future__ import annotations
 
 import io
 from datetime import date, datetime, timedelta, timezone
+from urllib.parse import urlsplit, urlunsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from bson import Binary
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy import delete, insert, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.mongo import get_mongo_db
 from app.crud.sesion_uso import _segundos_union
@@ -31,7 +32,9 @@ from app.models.gymkeep import (
     Camara,
     EstadoCamara,
     EstadoEquipo,
+    EstadoIncidencia,
     Equipo,
+    Incidencia,
     Mantenimiento,
     SesionUso,
     camara_equipos,
@@ -66,6 +69,10 @@ def _utc(momento: datetime | None) -> datetime | None:
 
 # ---------------------------------------------------------------- imagenes
 
+# Tope de pixeles: un PNG chico puede declarar una imagen enorme y agotar la memoria al
+# descomprimirlo. 40 MP cubre de sobra cualquier camara o foto de celular.
+MAX_PIXELES = 40_000_000
+
 
 def _a_jpeg(contenido: bytes, max_lado: int) -> tuple[bytes, int, int]:
     """Valida una imagen (JPEG/PNG/WebP), la achica si hace falta y la deja en JPEG."""
@@ -73,8 +80,10 @@ def _a_jpeg(contenido: bytes, max_lado: int) -> tuple[bytes, int, int]:
         raise ImagenInvalida("La imagen esta vacia.")
     try:
         imagen = Image.open(io.BytesIO(contenido))
+        if imagen.width * imagen.height > MAX_PIXELES:
+            raise ImagenInvalida("La imagen es demasiado grande (maximo 40 megapixeles).")
         imagen.load()
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise ImagenInvalida("El archivo no es una imagen valida.") from exc
     imagen = imagen.convert("RGB")
     imagen.thumbnail((max_lado, max_lado))
@@ -188,8 +197,32 @@ def _en_linea(doc: dict | None) -> bool:
     return (_ahora() - _utc(doc["recibido"])).total_seconds() <= EN_LINEA_S
 
 
-def resumen_camara(db: Session, camara: Camara, vivo: dict | None) -> dict:
-    con_zona = [m for m in maquinas_de_camara(db, camara, solo_con_zona=True)]
+def ocultar_clave(url: str | None) -> str | None:
+    """rtsp://usuario:clave@ip/stream -> rtsp://***@ip/stream: el panel no necesita la clave
+    de la camara (el pipeline recibe su fuente por linea de comandos o variable de entorno)."""
+    if not url:
+        return url
+    partes = urlsplit(url)
+    if "@" not in partes.netloc:
+        return url
+    return urlunsplit(partes._replace(netloc="***@" + partes.netloc.rsplit("@", 1)[1]))
+
+
+def _maquinas_con_zona(db: Session, camaras: list[Camara]) -> dict[int, int]:
+    """Cuantas maquinas activas con zona tiene cada camara, en una sola consulta."""
+    por_id = {c.id: c for c in camaras}
+    cuenta = {i: 0 for i in por_id}
+    if not por_id:
+        return cuenta
+    for fila in db.execute(select(camara_equipos).where(camara_equipos.c.camara_id.in_(list(por_id)))):
+        if fila.activo and roi_normalizada(fila.roi, por_id[fila.camara_id]):
+            cuenta[fila.camara_id] += 1
+    return cuenta
+
+
+def resumen_camara(db: Session, camara: Camara, vivo: dict | None, maquinas: int | None = None) -> dict:
+    if maquinas is None:
+        maquinas = _maquinas_con_zona(db, [camara])[camara.id]
     return {
         "id": camara.id,
         "codigo": camara.codigo,
@@ -197,13 +230,13 @@ def resumen_camara(db: Session, camara: Camara, vivo: dict | None) -> dict:
         "sucursal_id": camara.sucursal_id,
         "zona_id": camara.zona_id,
         "estado": camara.estado.value if hasattr(camara.estado, "value") else camara.estado,
-        "rtsp_url": camara.rtsp_url,
+        "rtsp_url": ocultar_clave(camara.rtsp_url),
         "ancho_px": camara.ancho_px,
         "alto_px": camara.alto_px,
         "ultima_conexion": camara.ultima_conexion,
         "en_linea": _en_linea(vivo),
         "tiene_cuadro": bool(vivo and vivo.get("cuadro_timestamp")),
-        "maquinas": len(con_zona),
+        "maquinas": maquinas,
     }
 
 
@@ -211,16 +244,19 @@ def listar_camaras(db: Session, sucursal_id: int | None = None) -> list[dict]:
     consulta = db.query(Camara)
     if sucursal_id is not None:
         consulta = consulta.filter(Camara.sucursal_id == sucursal_id)
+    camaras = consulta.order_by(Camara.id).all()
     vivos = _vivo_por_camara()
-    return [resumen_camara(db, c, vivos.get(c.id)) for c in consulta.order_by(Camara.id)]
+    con_zona = _maquinas_con_zona(db, camaras)
+    return [resumen_camara(db, c, vivos.get(c.id), con_zona[c.id]) for c in camaras]
 
 
 def detalle_camara(db: Session, camara: Camara) -> dict:
     vivo = get_mongo_db().camaras_vivo.find_one({"_id": camara.id}, {"cuadro": 0})
+    lista = maquinas_de_camara(db, camara)
     return {
-        **resumen_camara(db, camara, vivo),
+        **resumen_camara(db, camara, vivo, sum(1 for m in lista if m["activo"] and m["roi"])),
         "parametros": parametros_de(camara),
-        "lista_maquinas": maquinas_de_camara(db, camara),
+        "lista_maquinas": lista,
     }
 
 
@@ -286,7 +322,9 @@ def registrar_vivo(db: Session, camara: Camara, estado: EstadoVivoIn) -> None:
         mongo.camaras_vivo.update_one({"_id": camara.id}, {"$set": {"ultima_telemetria": ahora}})
 
     camara.ultima_conexion = ahora
-    camara.estado = EstadoCamara.activa
+    # Una camara puesta en mantenimiento o desactivada a mano no vuelve a "activa" por enviar datos.
+    if camara.estado not in (EstadoCamara.mantenimiento, EstadoCamara.inactiva):
+        camara.estado = EstadoCamara.activa
     camara.ancho_px, camara.alto_px = estado.ancho, estado.alto
     db.commit()
 
@@ -342,26 +380,40 @@ def _horas(intervalos) -> float:
     return round(_segundos_union(intervalos) / 3600, 3) if intervalos else 0.0
 
 
-def _ultima_mantencion(mantenciones) -> datetime | None:
-    momentos = [_utc(m.fecha_fin or m.fecha_inicio) for m in mantenciones]
-    return max(momentos) if momentos else None
+ESTADOS_INCIDENCIA_ABIERTA = (EstadoIncidencia.pendiente, EstadoIncidencia.en_proceso)
 
 
 def _resumenes(db: Session, equipos: list[Equipo]) -> list[dict]:
     ids = [e.id for e in equipos]
     intervalos: dict[int, list] = {i: [] for i in ids}
     ultima: dict[int, datetime] = {}
-    cerradas = db.query(SesionUso).filter(
-        SesionUso.equipo_id.in_(ids), SesionUso.estado == "cerrada", SesionUso.fecha_fin.isnot(None)
+    # Solo las tres columnas que hacen falta (sin armar objetos SesionUso): el horometro es la
+    # union de intervalos y necesita cada sesion cerrada.
+    cerradas = db.execute(
+        select(SesionUso.equipo_id, SesionUso.fecha_inicio, SesionUso.fecha_fin).where(
+            SesionUso.equipo_id.in_(ids), SesionUso.estado == "cerrada", SesionUso.fecha_fin.isnot(None)
+        )
     )
-    for s in cerradas:
-        ini, fin = _utc(s.fecha_inicio), _utc(s.fecha_fin)
-        intervalos[s.equipo_id].append((ini, fin))
-        ultima[s.equipo_id] = max(ultima.get(s.equipo_id, fin), fin)
+    for equipo_id, inicio, fin_sesion in cerradas:
+        ini, fin = _utc(inicio), _utc(fin_sesion)
+        intervalos[equipo_id].append((ini, fin))
+        ultima[equipo_id] = max(ultima.get(equipo_id, fin), fin)
 
-    mantenciones: dict[int, list] = {i: [] for i in ids}
-    for m in db.query(Mantenimiento).filter(Mantenimiento.equipo_id.in_(ids)):
-        mantenciones[m.equipo_id].append(m)
+    ultima_mantencion = {
+        equipo_id: _utc(momento)
+        for equipo_id, momento in db.execute(
+            select(Mantenimiento.equipo_id, func.max(func.coalesce(Mantenimiento.fecha_fin, Mantenimiento.fecha_inicio)))
+            .where(Mantenimiento.equipo_id.in_(ids))
+            .group_by(Mantenimiento.equipo_id)
+        )
+    }
+    incidencias_abiertas = dict(
+        db.execute(
+            select(Incidencia.equipo_id, func.count())
+            .where(Incidencia.equipo_id.in_(ids), Incidencia.estado.in_(ESTADOS_INCIDENCIA_ABIERTA))
+            .group_by(Incidencia.equipo_id)
+        ).all()
+    )
 
     camaras_por_equipo: dict[int, list] = {i: [] for i in ids}
     filas = _asociaciones(db, equipo_ids=ids)
@@ -381,12 +433,12 @@ def _resumenes(db: Session, equipos: list[Equipo]) -> list[dict]:
             actual = vivo.get(m["equipo_id"])
             if actual is None or m["estado"] in ("en_uso", "pausa"):
                 vivo[m["equipo_id"]] = m
-    con_foto = {d["_id"] for d in get_mongo_db().fotos_equipos.find({}, {"_id": 1})}
+    con_foto = {d["_id"] for d in get_mongo_db().fotos_equipos.find({"_id": {"$in": ids}}, {"_id": 1})}
 
     hace_7_dias = _ahora() - timedelta(days=7)
     resumenes = []
     for e in equipos:
-        mantencion = _ultima_mantencion(mantenciones[e.id])
+        mantencion = ultima_mantencion.get(e.id)
         estado_vivo_maquina = vivo.get(e.id)
         resumenes.append(
             {
@@ -404,7 +456,7 @@ def _resumenes(db: Session, equipos: list[Equipo]) -> list[dict]:
                 "ultima_sesion": ultima.get(e.id),
                 "ultima_mantencion": mantencion,
                 "horas_desde_mantencion": _horas(_recortar(intervalos[e.id], mantencion)) if mantencion else None,
-                "incidencias_abiertas": e.incidencias_abiertas,
+                "incidencias_abiertas": incidencias_abiertas.get(e.id, 0),
                 "camaras": camaras_por_equipo[e.id],
                 "medido_por_camara": bool(camaras_por_equipo[e.id]),
                 "en_uso_ahora": (
@@ -418,7 +470,7 @@ def _resumenes(db: Session, equipos: list[Equipo]) -> list[dict]:
 
 
 def resumen_maquinas(db: Session, sucursal_id: int | None = None) -> list[dict]:
-    consulta = db.query(Equipo).filter(Equipo.estado != EstadoEquipo.retirado)
+    consulta = db.query(Equipo).options(joinedload(Equipo.zona)).filter(Equipo.estado != EstadoEquipo.retirado)
     if sucursal_id is not None:
         consulta = consulta.filter(Equipo.sucursal_id == sucursal_id)
     return _resumenes(db, consulta.order_by(Equipo.nombre).all())
@@ -429,16 +481,40 @@ def detalle_maquina(db: Session, equipo: Equipo, dias: int = 30) -> dict:
 
     hoy = _ahora().astimezone(ZONA_LOCAL).date()
     por_dia: dict[date, list] = {hoy - timedelta(days=i): [] for i in range(dias)}
-    cerradas = [s for s in equipo.sesiones_uso if s.estado == "cerrada" and s.fecha_fin is not None]
-    for s in cerradas:
-        dia = _utc(s.fecha_inicio).astimezone(ZONA_LOCAL).date()
+    # Solo las sesiones de la ventana: desde la medianoche local del primer dia.
+    primer_dia = min(por_dia)
+    desde = datetime(primer_dia.year, primer_dia.month, primer_dia.day, tzinfo=ZONA_LOCAL).astimezone(timezone.utc)
+    en_ventana = db.execute(
+        select(SesionUso.fecha_inicio, SesionUso.fecha_fin).where(
+            SesionUso.equipo_id == equipo.id,
+            SesionUso.estado == "cerrada",
+            SesionUso.fecha_fin.isnot(None),
+            SesionUso.fecha_inicio >= desde,
+        )
+    )
+    for inicio, fin in en_ventana:
+        dia = _utc(inicio).astimezone(ZONA_LOCAL).date()
         if dia in por_dia:
-            por_dia[dia].append((_utc(s.fecha_inicio), _utc(s.fecha_fin)))
+            por_dia[dia].append((_utc(inicio), _utc(fin)))
     uso_diario = [
         {"fecha": dia, "horas": _horas(por_dia[dia]), "sesiones": len(por_dia[dia])} for dia in sorted(por_dia)
     ]
 
-    sesiones = sorted(equipo.sesiones_uso, key=lambda s: _utc(s.fecha_inicio), reverse=True)[:100]
+    sesiones = (
+        db.query(SesionUso)
+        .filter(SesionUso.equipo_id == equipo.id)
+        .order_by(SesionUso.fecha_inicio.desc())
+        .limit(100)
+        .all()
+    )
+    ultimas_incidencias = (
+        db.query(Incidencia)
+        .options(joinedload(Incidencia.tipo_falla))
+        .filter(Incidencia.equipo_id == equipo.id)
+        .order_by(Incidencia.fecha_reporte.desc())
+        .limit(100)
+        .all()
+    )
     incidencias = [
         {
             "id": i.id,
@@ -449,7 +525,7 @@ def detalle_maquina(db: Session, equipo: Equipo, dias: int = 30) -> dict:
             "origen": i.origen.value if hasattr(i.origen, "value") else i.origen,
             "reportado_por": i.reportado_por,
         }
-        for i in equipo.incidencias[:100]
+        for i in ultimas_incidencias
     ]
     mantenciones = (
         db.query(Mantenimiento)

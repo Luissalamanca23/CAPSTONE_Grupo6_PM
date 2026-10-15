@@ -1,13 +1,16 @@
 # Pipeline de vision en Docker (CPU, no requiere GPU), sobre el docker-compose.yml del equipo.
 # Ver vision/INTEGRACION.md.
 #
-#   VISION_CAMARA=CAM-01 VISION_FUENTE=rtsp://usuario:clave@ip/stream \
+#   VISION_CAMARA=CAM-01 VISION_FUENTE=rtsp://IP_DE_LA_CAMARA/RUTA \
 #     docker compose -f docker-compose.yml -f docker-compose.vision.yml up -d --build vision
 #
 # - VISION_CAMARA: codigo de una camara que ya existe en GymKeep (las zonas de sus maquinas se
 #   dibujan en el panel; el pipeline las relee cada 5 s).
-# - VISION_FUENTE: URL rtsp:// de la camara, o un video puesto en vision/datos/ (dentro del
+# - VISION_FUENTE: URL rtsp:// de la camara (las credenciales, si la camara las pide, van en la
+#   URL y no se versionan; ponerlas solo en el .env local), o un video puesto en vision/datos/ (dentro del
 #   contenedor: /app/datos/mi_video.mp4).
+# - VISION_PIPELINE_KEY (opcional): clave que el pipeline envia en la cabecera X-Pipeline-Key. Debe
+#   coincidir con la VISION_PIPELINE_KEY de la API (vacia = la API no la exige).
 # - VISION_OPCIONES (opcional): con un video, "--tiempo-real --repetir" lo hace funcionar como
 #   una camara en vivo.
 
@@ -26,6 +29,7 @@ services:
       YOLO_CONFIG_DIR: /tmp/Ultralytics
       VISION_CAMARA: ${VISION_CAMARA:-}
       VISION_FUENTE: ${VISION_FUENTE:-}
+      VISION_PIPELINE_KEY: ${VISION_PIPELINE_KEY:-}
       VISION_OPCIONES: ${VISION_OPCIONES:-}
     entrypoint: ["sh", "-c"]
     command:

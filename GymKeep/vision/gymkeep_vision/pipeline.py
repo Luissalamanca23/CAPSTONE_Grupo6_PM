@@ -10,11 +10,11 @@ Los eventos se escriben en `eventos.jsonl` y, si hay API, se envian a GymKeep.
 
 from __future__ import annotations
 
-import csv
 import logging
 import shutil
 import subprocess
 import time
+from collections import deque
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -23,12 +23,18 @@ import cv2
 import numpy as np
 
 from gymkeep_vision import rostros, tiempo
+from gymkeep_vision.captura import LectorVivo
 from gymkeep_vision.config import Config, ConfigMaquina
 from gymkeep_vision.eventos import construir_evento
+from gymkeep_vision.registro import RegistroPresencia
 from gymkeep_vision.sesiones import Estado, MonitorMaquina, Observacion
 from gymkeep_vision.zonas import Deteccion, ZonaMaquina, asignar
 
 log = logging.getLogger(__name__)
+
+# En una camara en vivo (24/7) `Resultado.eventos` guarda solo los ultimos eventos: el
+# historial completo esta en eventos.jsonl y en la API.
+MAX_EVENTOS_VIVO = 1000
 
 # Colores BGR por estado de la maquina.
 COLORES = {
@@ -58,7 +64,7 @@ class Resultado:
     fuente: str
     inicio_video: datetime
     monitores: dict[str, MonitorMaquina]
-    eventos: list[dict] = field(default_factory=list)
+    eventos: list[dict] | deque = field(default_factory=list)
     t_inicio_s: float = 0.0
     t_final_s: float = 0.0
     cuadros_analizados: int = 0
@@ -111,6 +117,7 @@ class Pipeline:
             for m in cfg.maquinas
         ]
         self.monitores = {m.nombre: MonitorMaquina(cfg.uso) for m in cfg.maquinas}
+        self._sin_senal = False  # camara en vivo: ya se cerraron las sesiones por falta de cuadros
 
     # ------------------------------------------------------------------ ejecucion
 
@@ -118,7 +125,11 @@ class Pipeline:
         from ultralytics import YOLO  # import tardio: los tests no necesitan torch
 
         es_archivo = Path(self.fuente).exists()
-        captura = cv2.VideoCapture(int(self.fuente) if self.fuente.isdigit() else self.fuente)
+
+        def abrir() -> cv2.VideoCapture:
+            return cv2.VideoCapture(int(self.fuente) if self.fuente.isdigit() else self.fuente)
+
+        captura = abrir()
         if not captura.isOpened():
             raise RuntimeError(f"No se pudo abrir la fuente de video: {self.fuente}")
 
@@ -145,6 +156,10 @@ class Pipeline:
         (self.salida / "evidencias").mkdir(exist_ok=True)
         resultado = Resultado(self.cfg, self.fuente, self.inicio_video, self.monitores)
         resultado.t_inicio_s = self.desde_s * escala if es_archivo else 0.0
+        # Una camara no termina: si deja de entregar cuadros se reabre la conexion en vez de salir.
+        lector = None if es_archivo else LectorVivo(abrir, captura)
+        if not es_archivo:
+            resultado.eventos = deque(maxlen=MAX_EVENTOS_VIVO)
 
         # Reloj del video anotado: cada cuadro escrito representa `periodo` segundos reales,
         # asi la hora impresa avanza al ritmo real al reproducirlo (aunque el archivo venga
@@ -164,9 +179,8 @@ class Pipeline:
                 str(ruta_video_tmp), cv2.VideoWriter_fourcc(*"mp4v"), 1 / periodo, self._tam_dibujo
             )
 
-        archivo_presencia = (self.salida / "presencia.csv").open("w", newline="", encoding="utf-8")
-        presencia = csv.writer(archivo_presencia)
-        presencia.writerow(["t_s", "timestamp", "maquina", "personas", "confianza_max", "estado"])
+        # En vivo, presencia.csv rota por dia y tamano para no crecer sin tope.
+        presencia = RegistroPresencia(self.salida / "presencia.csv", rotar=not es_archivo)
 
         t0_reloj = time.monotonic()
         t_ultimo_vivo = -1e9
@@ -181,7 +195,18 @@ class Pipeline:
                         continue
                     ok = False
                 else:
-                    ok, cuadro = captura.read()
+                    ok, cuadro = captura.read() if es_archivo else lector.leer()
+                if not ok and not es_archivo:
+                    # Sin cuadros: no se inventa presencia ni ausencia; solo si el corte dura
+                    # mas de t_off_s se cierran las sesiones (motivo 'sin_senal').
+                    t = time.monotonic() - t0_reloj
+                    self._vigilar_senal(lector, t, resultado)
+                    if self.max_segundos is not None and t > self.max_segundos:
+                        break
+                    time.sleep(0.1)
+                    continue
+                if ok:
+                    self._sin_senal = False
                 if not ok:
                     if self.repetir and es_archivo and resultado.cuadros_analizados:
                         captura.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -227,7 +252,7 @@ class Pipeline:
                     )
                     monitor = self.monitores[zona.nombre]
                     pendientes += [(ev, zona.nombre, dets) for ev in monitor.actualizar(obs)]
-                    presencia.writerow(
+                    presencia.escribir(
                         [
                             f"{t:.2f}",
                             self._timestamp(t),
@@ -237,10 +262,13 @@ class Pipeline:
                             monitor.estado.value,
                         ]
                     )
-                # Se dibuja despues de actualizar, para que la evidencia de un inicio_uso ya
-                # muestre la maquina EN USO.
-                caras = self.detector_rostros.detectar(cuadro) if self.detector_rostros and self.cfg.difuminar_personas else []
-                anotado = self._anotar(cuadro, detecciones, asignadas, t, caras)
+                # Dibujar y buscar rostros cuesta: solo se hace si alguien lo va a usar (video,
+                # ventana, evidencia de un inicio_uso o cuadro para el panel). Se dibuja
+                # despues de actualizar, para que la evidencia ya muestre la maquina EN USO.
+                para_panel = self.publicador is not None and self.publicador.necesita_cuadro()
+                dibujar = escritor is not None or self.mostrar or any(ev.tipo == "inicio_uso" for ev, _, _ in pendientes)
+                caras = self._buscar_rostros(cuadro) if dibujar or para_panel else []
+                anotado = self._anotar(cuadro, detecciones, asignadas, t, caras) if dibujar else None
                 for ev, nombre, dets in pendientes:
                     self._emitir(ev, nombre, dets, anotado, resultado)
 
@@ -249,7 +277,7 @@ class Pipeline:
                         escritor.write(anotado)
                         escritos += 1
                 if self.publicador is not None:
-                    jpeg = self._cuadro_para_panel(cuadro, detecciones, caras) if self.publicador.necesita_cuadro() else None
+                    jpeg = self._cuadro_para_panel(cuadro, detecciones, caras) if para_panel else None
                     fps_analisis = resultado.cuadros_analizados / max(1e-6, time.monotonic() - t0_reloj)
                     self.publicador.publicar(self._estado_vivo(t, detecciones, asignadas, latencia, fps_analisis), jpeg)
                     nueva = self.publicador.tomar_config_nueva()
@@ -278,8 +306,11 @@ class Pipeline:
                 for ev in monitor.finalizar(t, motivo):
                     self._emitir(ev, nombre, [], None, resultado)
             resultado.t_final_s = t
-            captura.release()
-            archivo_presencia.close()
+            if lector is not None:
+                lector.liberar()
+            else:
+                captura.release()
+            presencia.cerrar()
             if escritor is not None:
                 escritor.release()
                 resultado.video_salida = _recodificar_h264(ruta_video_tmp, self.salida / "video_anotado.mp4")
@@ -303,6 +334,22 @@ class Pipeline:
                 # Una maquina en el borde queda cortada: la persona encima se detecta mal y
                 # el uso se subestima. La solucion es mover la camara, no bajar umbrales.
                 log.warning("La ROI de '%s' toca el borde del cuadro: su uso puede quedar subestimado", zona.nombre)
+
+    def _buscar_rostros(self, cuadro: np.ndarray) -> list:
+        if self.detector_rostros is None or not self.cfg.difuminar_personas:
+            return []
+        return self.detector_rostros.detectar(cuadro)
+
+    def _vigilar_senal(self, lector: LectorVivo, t: float, resultado: Resultado) -> None:
+        """Camara en vivo sin cuadros: pasados t_off_s segundos se cierran las sesiones
+        abiertas con motivo 'sin_senal' (una sola vez por corte)."""
+        if self._sin_senal or lector.sin_senal_s() <= self.cfg.uso.t_off_s:
+            return
+        self._sin_senal = True
+        log.warning("Sin senal de la camara hace %.0f s: se cierran las sesiones abiertas", lector.sin_senal_s())
+        for nombre, monitor in self.monitores.items():
+            for ev in monitor.finalizar(t, "sin_senal"):
+                self._emitir(ev, nombre, [], None, resultado)
 
     def _detectar(self, modelo, cuadro: np.ndarray) -> list[Deteccion]:
         m = self.cfg.modelo
@@ -425,11 +472,23 @@ class Pipeline:
         conserva su estado (su sesion en curso no se corta); una quitada cierra su sesion."""
         from gymkeep_vision.config import desde_api
 
-        nueva = desde_api(datos, base=self.cfg)
-        nuevas = {m.equipo_id for m in nueva.maquinas}
-        previos = {self.maquinas[n].equipo_id: (n, mon) for n, mon in self.monitores.items()}
-        for equipo_id, (nombre, monitor) in previos.items():
-            if equipo_id not in nuevas:
+        try:
+            nueva = desde_api(datos, base=self.cfg)
+        except ValueError as exc:
+            # Parametros de uso incoherentes (ej. t_off_s <= gracia_s): se aplican las zonas
+            # pero los parametros siguen siendo los anteriores.
+            log.warning("Parametros de uso invalidos desde la plataforma (%s): se conservan los anteriores", exc)
+            uso = self.cfg.uso
+            parametros = {
+                **datos["parametros"],
+                "t_on_s": uso.t_on_s, "t_off_s": uso.t_off_s, "gracia_s": uso.gracia_s, "t_max_s": uso.t_max_s,
+            }
+            nueva = desde_api({**datos, "parametros": parametros}, base=self.cfg)
+        # Se emparejan por equipo_id y, si la maquina previa no lo tiene, por nombre.
+        previos = {_clave_maquina(self.maquinas[n]): (n, mon) for n, mon in self.monitores.items()}
+        continuan = {_clave_previa(m, previos) for m in nueva.maquinas}
+        for clave, (nombre, monitor) in previos.items():
+            if clave not in continuan:
                 for ev in monitor.finalizar(t, "zona_quitada"):
                     self._emitir(ev, nombre, [], None, resultado)
 
@@ -448,7 +507,8 @@ class Pipeline:
         self._preparar_zonas(self._ancho, self._alto)
         self.monitores = {}
         for m in self.cfg.maquinas:
-            monitor = previos[m.equipo_id][1] if m.equipo_id in previos else MonitorMaquina(self.cfg.uso)
+            clave = _clave_previa(m, previos)
+            monitor = previos[clave][1] if clave in previos else MonitorMaquina(self.cfg.uso)
             monitor.p = self.cfg.uso
             self.monitores[m.nombre] = monitor
         resultado.config, resultado.monitores = self.cfg, self.monitores
@@ -545,6 +605,18 @@ class Pipeline:
                 cv2.putText(img, texto, (x, y), fuente, escala, (255, 255, 255), 1, cv2.LINE_AA)
                 x += ancho_col + sep
             y += alto_linea
+
+
+def _clave_maquina(maquina: ConfigMaquina) -> int | str:
+    """Identidad de una maquina entre dos configuraciones: su equipo_id o, si no lo tiene, su nombre."""
+    return maquina.equipo_id if maquina.equipo_id is not None else maquina.nombre
+
+
+def _clave_previa(maquina: ConfigMaquina, previos: dict) -> int | str:
+    """Clave con la que una maquina de la configuracion nueva figura en `previos` (si estaba)."""
+    if maquina.equipo_id in previos:
+        return maquina.equipo_id
+    return maquina.nombre if maquina.nombre in previos else _clave_maquina(maquina)
 
 
 def _estado_largo(monitor: MonitorMaquina, t: float) -> str:

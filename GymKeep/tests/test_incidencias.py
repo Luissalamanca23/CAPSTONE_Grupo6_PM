@@ -25,6 +25,7 @@ def test_reportar_incidencia_por_qr_autocompleta_descripcion_y_prioridad(client,
     payload = {
         "token": token,
         "tipo_falla_codigo": "ROTA",
+        "gravedad": "grave",
         "reportado_por": "Socio anonimo",
     }
     respuesta = client.post("/api/v1/incidencias/reporte-qr", json=payload)
@@ -33,15 +34,27 @@ def test_reportar_incidencia_por_qr_autocompleta_descripcion_y_prioridad(client,
     assert incidencia["equipo_id"] == equipo["id"]
     assert incidencia["origen"] == "qr"
     assert incidencia["estado"] == "pendiente"
-    # "ROTA" se clasifica automaticamente como urgente (prioridad_base del catalogo).
-    assert incidencia["prioridad"] == "urgente"
+    # En el reporte publico la prioridad la define la gravedad elegida: grave -> alta.
+    assert incidencia["prioridad"] == "alta"
     assert incidencia["descripcion"]  # se autocompleta, no queda vacia
     assert incidencia["tipo_falla"]["codigo"] == "ROTA"
 
 
-def test_clasificacion_automatica_por_tipo_de_falla(client, sucursal_id):
+def test_prioridad_del_reporte_qr_sale_de_la_gravedad(client, sucursal_id):
     equipo = _crear_equipo(client, sucursal_id, "EQ-0150")
     token = equipo["qr_activo"]["token"]
+    casos = [("leve", "baja"), ("grave", "alta")]
+    for gravedad, prioridad_esperada in casos:
+        respuesta = client.post(
+            "/api/v1/incidencias/reporte-qr",
+            json={"token": token, "tipo_falla_codigo": "OTRO", "gravedad": gravedad, "reportado_por": "Socio"},
+        )
+        assert respuesta.status_code == 201
+        assert respuesta.json()["prioridad"] == prioridad_esperada
+
+
+def test_clasificacion_automatica_por_tipo_de_falla_en_creacion_manual(client, sucursal_id):
+    equipo = _crear_equipo(client, sucursal_id, "EQ-0151")
     casos = {
         "DESGASTE": "baja",
         "SONIDO_EXTRANO": "media",
@@ -51,8 +64,8 @@ def test_clasificacion_automatica_por_tipo_de_falla(client, sucursal_id):
     }
     for codigo, prioridad_esperada in casos.items():
         respuesta = client.post(
-            "/api/v1/incidencias/reporte-qr",
-            json={"token": token, "tipo_falla_codigo": codigo, "reportado_por": "Socio"},
+            "/api/v1/incidencias/",
+            json={"equipo_id": equipo["id"], "tipo_falla_codigo": codigo},
         )
         assert respuesta.status_code == 201
         assert respuesta.json()["prioridad"] == prioridad_esperada
@@ -61,14 +74,14 @@ def test_clasificacion_automatica_por_tipo_de_falla(client, sucursal_id):
 def test_reporte_qr_con_falla_solo_ia_es_rechazado(client, sucursal_id):
     equipo = _crear_equipo(client, sucursal_id, "EQ-0180")
     token = equipo["qr_activo"]["token"]
-    payload = {"token": token, "tipo_falla_codigo": "MOVIMIENTO_ANOMALO", "reportado_por": "Socio"}
+    payload = {"token": token, "tipo_falla_codigo": "MOVIMIENTO_ANOMALO", "gravedad": "leve", "reportado_por": "Socio"}
     respuesta = client.post("/api/v1/incidencias/reporte-qr", json=payload)
     # MOVIMIENTO_ANOMALO solo lo detecta la IA: el formulario publico no debe aceptarlo.
     assert respuesta.status_code == 400
 
 
 def test_reporte_qr_token_inexistente_devuelve_404(client):
-    payload = {"token": "00000000-0000-0000-0000-000000000000", "tipo_falla_codigo": "OTRO", "reportado_por": "Socio"}
+    payload = {"token": "00000000-0000-0000-0000-000000000000", "tipo_falla_codigo": "OTRO", "gravedad": "leve", "reportado_por": "Socio"}
     respuesta = client.post("/api/v1/incidencias/reporte-qr", json=payload)
     assert respuesta.status_code == 404
 
@@ -76,7 +89,7 @@ def test_reporte_qr_token_inexistente_devuelve_404(client):
 def test_reporte_qr_sin_nombre_es_rechazado(client, sucursal_id):
     equipo = _crear_equipo(client, sucursal_id, "EQ-0160")
     token = equipo["qr_activo"]["token"]
-    payload = {"token": token, "tipo_falla_codigo": "OTRO", "reportado_por": ""}
+    payload = {"token": token, "tipo_falla_codigo": "OTRO", "gravedad": "leve", "reportado_por": ""}
     respuesta = client.post("/api/v1/incidencias/reporte-qr", json=payload)
     # El nombre es el unico campo de texto libre y es obligatorio: un string vacio
     # debe ser rechazado por el esquema (422), no aceptado como reporte anonimo.

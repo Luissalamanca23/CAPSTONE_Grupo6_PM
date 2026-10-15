@@ -1,20 +1,33 @@
 export const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
-async function request(path, options = {}) {
+// Error de la API con el codigo HTTP (el flujo del PIN del modulo de vision depende de .status).
+export class ErrorApi extends Error {
+  constructor(mensaje, status) {
+    super(mensaje)
+    this.status = status
+  }
+}
+
+// Peticion JSON compartida por todas las pantallas. Los cuerpos Blob (subida de imagenes)
+// no llevan Content-Type JSON; las cabeceras de options se suman a las base.
+export async function request(path, options = {}) {
   const respuesta = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: {
+      ...(options.body instanceof Blob ? {} : { 'Content-Type': 'application/json' }),
+      ...options.headers,
+    },
   })
 
   if (!respuesta.ok) {
     let detalle = respuesta.statusText
     try {
       const cuerpo = await respuesta.json()
-      detalle = cuerpo.detail || detalle
+      if (cuerpo.detail) detalle = typeof cuerpo.detail === 'string' ? cuerpo.detail : JSON.stringify(cuerpo.detail)
     } catch {
       // el cuerpo no era JSON, se mantiene el statusText
     }
-    throw new Error(detalle)
+    throw new ErrorApi(detalle, respuesta.status)
   }
 
   if (respuesta.status === 204) return null
@@ -22,6 +35,8 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  // Conteos agregados (SQL) para el panel de gestion; no dependen de listas truncadas.
+  obtenerEstadisticas: () => request('/estadisticas/'),
   // Empresas / sucursales / zonas: jerarquia obligatoria para registrar equipamiento
   // (ver GymKeep_BDD_Completa). Para el Capstone normalmente hay una sola empresa/sucursal,
   // creada por la data de ejemplo (postgres/seed.sql).

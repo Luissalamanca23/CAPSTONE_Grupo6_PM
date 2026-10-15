@@ -6,8 +6,11 @@ from __future__ import annotations
 
 import json
 import logging
+import queue
+import threading
 import time
 import uuid
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -44,6 +47,7 @@ def construir_evento(
         "parametros": {
             "t_on_s": cfg.uso.t_on_s,
             "t_off_s": cfg.uso.t_off_s,
+            "t_max_s": cfg.uso.t_max_s,
             "confianza_min": cfg.confianza_min,
             "criterio_zona": maquina.criterio or cfg.criterio_zona,
         },
@@ -92,12 +96,13 @@ def construir_evento(
 
 
 class DestinoJSONL:
-    """Registro local de todos los eventos: permite reenviarlos despues con `enviar`."""
+    """Registro local de todos los eventos: permite reenviarlos despues con `enviar`.
+    Abre en modo append: reiniciar el pipeline no borra el historial."""
 
     def __init__(self, ruta: Path):
         ruta.parent.mkdir(parents=True, exist_ok=True)
         self.ruta = ruta
-        self._archivo = ruta.open("w", encoding="utf-8")
+        self._archivo = ruta.open("a", encoding="utf-8")
 
     def enviar(self, evento: dict) -> None:
         self._archivo.write(json.dumps(evento, ensure_ascii=False) + "\n")
@@ -107,36 +112,194 @@ class DestinoJSONL:
         self._archivo.close()
 
 
-class DestinoAPI:
-    """Envia los eventos al backend. Los reintentos son seguros porque el backend es
-    idempotente por `event_uuid` (un reenvio devuelve el evento ya guardado)."""
+# Respuestas 4xx que no indican un evento mal formado sino un problema pasajero o de
+# configuracion (clave del pipeline, limite de peticiones): se reintentan, no se descartan.
+_REINTENTABLES = {401, 403, 408, 425, 429}
 
-    def __init__(self, cliente: httpx.Client, reintentos: int = 3):
+
+class DestinoAPI:
+    """Envia los eventos al backend sin frenar el analisis: `enviar` solo encola y un hilo
+    se encarga de la red. Los reintentos son seguros porque el backend es idempotente por
+    `event_uuid` (un reenvio devuelve el evento ya guardado).
+
+    Si la API no responde, el evento pasa a `atrasados` y se guarda en `ruta_pendientes`
+    (JSONL, un evento por linea). Los atrasados se reintentan en orden, con espera creciente
+    (1, 2, 4... hasta `espera_max_s` s), y los eventos nuevos esperan detras de ellos para no
+    alterar el orden. Al arrancar se leen los pendientes que dejo una corrida anterior."""
+
+    def __init__(
+        self,
+        cliente: httpx.Client,
+        reintentos: int = 3,
+        *,
+        ruta_pendientes: Path | None = None,
+        espera_inicial_s: float = 1.0,
+        espera_max_s: float = 30.0,
+        pausa_s: float = 0.5,
+    ):
         self.cliente = cliente
         self.reintentos = reintentos
+        self.ruta_pendientes = ruta_pendientes
+        self.espera_inicial_s = espera_inicial_s
+        self.espera_max_s = espera_max_s
+        self.pausa_s = pausa_s
         self.enviados = 0
-        self.fallidos: list[dict] = []
+        self.fallidos: list[dict] = []  # rechazados por la API (no se reintentan)
 
-    def enviar(self, evento: dict) -> dict | None:
+        self._cola: queue.Queue = queue.Queue()
+        self._atrasados: deque[dict] = deque()
+        self._lock = threading.Lock()
+        self._parar = threading.Event()
+        self._limite = float("inf")  # instante (monotonic) hasta el cual se drena al cerrar
+        self._en_vuelo: dict | None = None
+        self._cargar_pendientes()
+        self._hilo = threading.Thread(target=self._bucle, name="gymkeep-eventos", daemon=True)
+        self._hilo.start()
+
+    @property
+    def pendientes(self) -> int:
+        """Eventos que todavia no llegan a la API (en cola o atrasados)."""
+        return self._cola.qsize() + len(self._atrasados) + (1 if self._en_vuelo is not None else 0)
+
+    # -- lado del pipeline (no bloquea nunca)
+
+    def enviar(self, evento: dict) -> None:
+        self._cola.put(evento)
+
+    def cerrar(self, espera_s: float = 15.0) -> None:
+        """Intenta entregar lo pendiente durante a lo mas `espera_s`; lo que no alcance a
+        salir queda en el archivo de pendientes para la proxima corrida."""
+        self._limite = time.monotonic() + espera_s
+        self._parar.set()
+        self._hilo.join(timeout=espera_s + 12)  # 12 s: un envio en curso puede tardar hasta el timeout
+        with self._lock:
+            restantes = ([self._en_vuelo] if self._en_vuelo is not None else []) + self._vaciar_cola()
+            if restantes or self._atrasados:
+                for evento in restantes:
+                    if evento not in self._atrasados:
+                        self._atrasar(evento)
+                log.warning("%d eventos quedaron pendientes de envio (%s)", len(self._atrasados), self.ruta_pendientes)
+
+    # -- envio directo (sin cola): lo usa el comando `enviar`
+
+    def enviar_ahora(self, evento: dict) -> dict | None:
         for intento in range(1, self.reintentos + 1):
-            try:
-                respuesta = self.cliente.post("/api/v1/eventos-ia/", json=evento)
-            except httpx.TransportError as exc:
-                log.warning("API no responde (%s), intento %d/%d", exc, intento, self.reintentos)
-            else:
-                if respuesta.status_code < 300:
-                    self.enviados += 1
-                    return respuesta.json()
-                if respuesta.status_code < 500:
-                    log.error("La API rechazo %s: %s", evento["evento"]["tipo"], respuesta.text)
-                    break
-                log.warning("Error %d en la API, intento %d/%d", respuesta.status_code, intento, self.reintentos)
-            time.sleep(0.5 * intento)
+            resultado, cuerpo = self._intentar(evento)
+            if resultado == "ok":
+                return cuerpo
+            if resultado == "rechazado":
+                break
+            log.warning("Reintento %d/%d", intento, self.reintentos)
+            time.sleep(self.pausa_s * intento)
         self.fallidos.append(evento)
         return None
 
-    def cerrar(self) -> None:
-        pass
+    # -- hilo de envio
+
+    def _intentar(self, evento: dict) -> tuple[str, dict | None]:
+        """Un intento de envio: ('ok', respuesta) | ('rechazado', None) | ('reintentar', None)."""
+        try:
+            respuesta = self.cliente.post("/api/v1/eventos-ia/", json=evento)
+        except httpx.TransportError as exc:
+            log.warning("API no responde (%s)", exc)
+            return "reintentar", None
+        if respuesta.status_code < 300:
+            self.enviados += 1
+            return "ok", respuesta.json()
+        if respuesta.status_code < 500 and respuesta.status_code not in _REINTENTABLES:
+            log.error("La API rechazo %s: %s", evento["evento"]["tipo"], respuesta.text)
+            return "rechazado", None
+        log.warning("Error %d en la API", respuesta.status_code)
+        return "reintentar", None
+
+    def _bucle(self) -> None:
+        espera = self.espera_inicial_s
+        while True:
+            if time.monotonic() >= self._limite:
+                return  # cerrar() se encarga de dejar lo que falte en el archivo
+            with self._lock:
+                # Los eventos nuevos van detras de los atrasados: se conserva el orden.
+                if self._atrasados:
+                    for evento in self._vaciar_cola():
+                        self._atrasar(evento)
+                    self._en_vuelo = self._atrasados[0]
+                    atrasado = True
+                else:
+                    atrasado = False
+                    try:
+                        self._en_vuelo = self._cola.get_nowait()
+                    except queue.Empty:
+                        self._en_vuelo = None
+                        if self._parar.is_set():
+                            return
+            if self._en_vuelo is None:
+                self._parar.wait(0.2)
+                continue
+
+            evento = self._en_vuelo
+            resultado = "reintentar"
+            # Un atrasado se prueba una vez por vuelta (el bucle ya espera entre vueltas).
+            for intento in range(1, (1 if atrasado else self.reintentos) + 1):
+                resultado, _ = self._intentar(evento)
+                if resultado != "reintentar":
+                    break
+                time.sleep(self.pausa_s * intento)
+            with self._lock:
+                self._en_vuelo = None
+                if resultado == "reintentar":
+                    if not atrasado:
+                        self._atrasar(evento)
+                elif atrasado:
+                    self._atrasados.popleft()
+                    self._reescribir_pendientes()
+                if resultado == "rechazado":
+                    self.fallidos.append(evento)
+            if resultado == "reintentar":
+                # Con la API caida se espera cada vez mas; al cerrar solo una pausa corta.
+                pausa = min(espera, 0.5) if self._parar.is_set() else espera
+                time.sleep(pausa)
+                espera = min(self.espera_max_s, espera * 2)
+            else:
+                espera = self.espera_inicial_s
+
+    def _vaciar_cola(self) -> list[dict]:
+        eventos = []
+        while True:
+            try:
+                eventos.append(self._cola.get_nowait())
+            except queue.Empty:
+                return eventos
+
+    # -- pendientes en disco
+
+    def _atrasar(self, evento: dict) -> None:
+        self._atrasados.append(evento)
+        if self.ruta_pendientes is not None:
+            self.ruta_pendientes.parent.mkdir(parents=True, exist_ok=True)
+            with self.ruta_pendientes.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(evento, ensure_ascii=False) + "\n")
+
+    def _reescribir_pendientes(self) -> None:
+        if self.ruta_pendientes is None:
+            return
+        if not self._atrasados:
+            self.ruta_pendientes.unlink(missing_ok=True)
+            return
+        tmp = self.ruta_pendientes.with_suffix(".tmp")
+        tmp.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in self._atrasados), encoding="utf-8")
+        tmp.replace(self.ruta_pendientes)
+
+    def _cargar_pendientes(self) -> None:
+        if self.ruta_pendientes is None or not self.ruta_pendientes.exists():
+            return
+        for linea in self.ruta_pendientes.read_text(encoding="utf-8").splitlines():
+            try:
+                if linea.strip():
+                    self._atrasados.append(json.loads(linea))
+            except json.JSONDecodeError:
+                log.warning("Linea danada en %s: se omite", self.ruta_pendientes)
+        if self._atrasados:
+            log.info("%d eventos pendientes de una corrida anterior: se reintentan", len(self._atrasados))
 
 
 def _buscar(items: list[dict], **filtro) -> dict | None:

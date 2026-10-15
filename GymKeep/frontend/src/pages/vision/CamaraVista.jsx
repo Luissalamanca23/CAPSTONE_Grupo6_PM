@@ -4,29 +4,32 @@ import { api } from '../../api/client.js'
 import { visionApi } from '../../api/vision.js'
 import { CATEGORIAS_EQUIPO } from '../../components/CategoriaEquipoBadge.jsx'
 import { ChipSenal } from './Camaras.jsx'
+import PinDialogo from './PinDialogo.jsx'
 import { ESTADOS_VIVO, textoEstadoVivo } from './uso.js'
+import usePolling from './usePolling.js'
 
 const COLOR_SIN_DATO = '#94a3b8'
 const COLOR_EDICION = '#f97316'
+const T_MAX_POR_DEFECTO = 10800
+const PASO_TECLADO = 0.005 // 0,5 % de la imagen por pulsacion; con Mayus, 2 %
 
 // Ultimo cuadro de la camara, precargado antes de mostrarlo (asi no parpadea al refrescar).
+// Si la carga falla se conserva el ultimo cuadro bueno. Se pausa con la pestana oculta.
 function useCuadro(camaraId, enVivo, version) {
   const [url, setUrl] = useState(null)
-  useEffect(() => {
-    let vigente = true
-    const cargar = () => {
+  const cargar = (vigente) =>
+    new Promise((resolver) => {
       const siguiente = visionApi.urlCuadro(camaraId)
       const imagen = new Image()
-      imagen.onload = () => vigente && setUrl(siguiente)
+      imagen.onload = () => {
+        if (vigente()) setUrl(siguiente)
+        resolver()
+      }
+      imagen.onerror = resolver
       imagen.src = siguiente
-    }
-    cargar()
-    const temporizador = enVivo ? setInterval(cargar, 1500) : null
-    return () => {
-      vigente = false
-      if (temporizador) clearInterval(temporizador)
-    }
-  }, [camaraId, enVivo, version])
+    })
+  // Fuera de vivo se carga una sola vez (y de nuevo si cambia la camara o la version).
+  usePolling(cargar, enVivo ? 1500 : 1e9, { clave: `${camaraId}-${version}` })
   return url
 }
 
@@ -79,6 +82,20 @@ function Escenario({ url, maquinas, personas, vivoPorEquipo, modo, puntos, setPu
     setPuntos(nuevo)
   }
 
+  // Las flechas mueven el vertice con foco (con Mayus, un paso mayor).
+  function moverConTeclado(e, indice) {
+    const direcciones = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
+    const dir = direcciones[e.key]
+    if (!dir) return
+    e.preventDefault()
+    e.stopPropagation()
+    const paso = e.shiftKey ? PASO_TECLADO * 4 : PASO_TECLADO
+    const limitar = (v) => Math.min(1, Math.max(0, v))
+    const nuevo = [...puntos]
+    nuevo[indice] = [limitar(puntos[indice][0] + dir[0] * paso), limitar(puntos[indice][1] + dir[1] * paso)]
+    setPuntos(nuevo)
+  }
+
   const editable = modo === 'dibujar' || modo === 'editar'
   return (
     <div
@@ -96,7 +113,15 @@ function Escenario({ url, maquinas, personas, vivoPorEquipo, modo, puntos, setPu
         </div>
       )}
 
-      <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <svg
+        role="img"
+        aria-label={`Zonas de las máquinas y personas detectadas sobre la imagen de la cámara. Zonas dibujadas: ${
+          maquinas.filter((m) => m.roi).length
+        }.`}
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+      >
         {maquinas
           .filter((m) => m.roi && m.equipo_id !== editando)
           .map((m) => {
@@ -165,6 +190,10 @@ function Escenario({ url, maquinas, personas, vivoPorEquipo, modo, puntos, setPu
         puntos.map(([x, y], i) => (
           <div
             key={i}
+            role="button"
+            tabIndex={0}
+            aria-label={`Vértice ${i + 1} de ${puntos.length} de la zona. Usa las flechas del teclado para moverlo.`}
+            onKeyDown={(e) => moverConTeclado(e, i)}
             onPointerDown={(e) => {
               e.stopPropagation()
               ref.current.setPointerCapture(e.pointerId)
@@ -174,7 +203,7 @@ function Escenario({ url, maquinas, personas, vivoPorEquipo, modo, puntos, setPu
               e.stopPropagation()
               if (modo === 'dibujar' && i === 0 && puntos.length >= 3) onCerrarPoligono()
             }}
-            className={`absolute w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow cursor-move ${
+            className={`absolute w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow cursor-move focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900 ${
               i === 0 && modo === 'dibujar' ? 'bg-emerald-500' : 'bg-orange-500'
             }`}
             style={{ left: `${x * 100}%`, top: `${y * 100}%` }}
@@ -185,15 +214,18 @@ function Escenario({ url, maquinas, personas, vivoPorEquipo, modo, puntos, setPu
 }
 
 function Parametros({ camara, onGuardado }) {
-  const [valores, setValores] = useState(camara.parametros)
+  // t_max_s puede no venir en servidores antiguos: se usa el valor por defecto.
+  const conDefectos = (p) => ({ t_max_s: T_MAX_POR_DEFECTO, ...p })
+  const [valores, setValores] = useState(conDefectos(camara.parametros))
   const [mensaje, setMensaje] = useState(null)
-  useEffect(() => setValores(camara.parametros), [camara.parametros])
+  useEffect(() => setValores(conDefectos(camara.parametros)), [camara.parametros])
 
   const campos = [
     ['t_on_s', 'T_on (s)', 'Presencia continua para abrir una sesión.', 1],
     ['t_off_s', 'T_off (s)', 'Ausencia continua para cerrarla (mayor al descanso entre series).', 1],
     ['confianza_min', 'Confianza mínima', 'Bajarla solo en cámaras de baja resolución.', 0.05],
     ['gracia_s', 'Gracia (s)', 'Huecos de detección que no cuentan como ausencia.', 1],
+    ['t_max_s', 'T_max (s)', 'Duración máxima de una sesión; al superarla se cierra y vuelve a empezar.', 60],
     ['escala_tiempo', 'Escala de tiempo', 'Segundos reales por segundo de video (1 en vivo).', 0.001],
   ]
 
@@ -241,19 +273,23 @@ function AsignarZona({ camara, equipos, onCancelar, onAsignar }) {
   const [equipoId, setEquipoId] = useState(disponibles[0]?.id || '')
   const [nueva, setNueva] = useState({ nombre: '', codigo_activo: '', categoria: 'cardio' })
   const [error, setError] = useState(null)
+  // Si la zona no se guarda (ej. PIN cancelado), al reintentar se usa la maquina ya creada.
+  const [creadoId, setCreadoId] = useState(null)
 
   async function guardar(e) {
     e.preventDefault()
     setError(null)
     try {
       let id = Number(equipoId)
-      if (opcion === 'nueva') {
+      if (opcion === 'nueva' && creadoId) id = creadoId
+      else if (opcion === 'nueva') {
         const creado = await api.crearEquipo({
           ...nueva,
           sucursal_id: camara.sucursal_id,
           zona_id: camara.zona_id,
         })
         id = creado.id
+        setCreadoId(id)
       }
       await onAsignar(id)
     } catch (err) {
@@ -324,6 +360,7 @@ export default function CamaraVista() {
   const [objetivo, setObjetivo] = useState(null) // equipo_id cuya zona se dibuja/edita
   const [confirmarQuitar, setConfirmarQuitar] = useState(false)
   const [aviso, setAviso] = useState(null)
+  const [errorEquipos, setErrorEquipos] = useState(null)
 
   const cargarCamara = useCallback(
     () =>
@@ -333,28 +370,33 @@ export default function CamaraVista() {
         .catch((err) => setError(err.message)),
     [camaraId],
   )
+  usePolling(cargarCamara, 15000, { clave: camaraId })
 
+  // El selector de maquinas necesita todas las de la sucursal (el listado general corta en 100).
+  const sucursalId = camara?.sucursal_id
+  const cargarEquipos = useCallback(
+    () =>
+      visionApi
+        .listarEquiposSucursal(sucursalId)
+        .then((lista) => (setEquipos(lista), setErrorEquipos(null)))
+        .catch((err) => setErrorEquipos(`No se pudo cargar la lista de máquinas: ${err.message}`)),
+    [sucursalId],
+  )
   useEffect(() => {
-    cargarCamara()
-    const temporizador = setInterval(cargarCamara, 15000)
-    return () => clearInterval(temporizador)
-  }, [cargarCamara])
+    if (sucursalId) cargarEquipos()
+  }, [sucursalId, cargarEquipos])
 
-  useEffect(() => {
-    if (camara?.sucursal_id) api.listarEquipos(camara.sucursal_id).then(setEquipos)
-  }, [camara?.sucursal_id])
-
+  // El estado en vivo falla en silencio a proposito: sin respuesta la camara se muestra sin senal.
   const enLinea = Boolean(vivo?.en_linea)
-  useEffect(() => {
-    let vigente = true
-    const cargar = () => visionApi.obtenerVivo(camaraId).then((v) => vigente && setVivo(v)).catch(() => {})
-    cargar()
-    const temporizador = setInterval(cargar, enLinea ? 1000 : 4000)
-    return () => {
-      vigente = false
-      clearInterval(temporizador)
-    }
-  }, [camaraId, enLinea])
+  usePolling(
+    (vigente) =>
+      visionApi
+        .obtenerVivo(camaraId)
+        .then((v) => vigente() && setVivo(v))
+        .catch(() => vigente() && setVivo(null)),
+    enLinea ? 1000 : 4000,
+    { clave: camaraId },
+  )
 
   const url = useCuadro(camaraId, enLinea, versionCuadro)
   const vivoPorEquipo = useMemo(
@@ -389,7 +431,7 @@ export default function CamaraVista() {
     cancelar()
     setAviso('Zona guardada. Si el pipeline está corriendo, la aplica en unos segundos.')
     await cargarCamara()
-    api.listarEquipos(camara.sucursal_id).then(setEquipos)
+    cargarEquipos()
   }
 
   async function quitar() {
@@ -423,6 +465,7 @@ export default function CamaraVista() {
 
   return (
     <div className="space-y-5">
+      <PinDialogo />
       <Link to="/camaras" className="text-sm text-emerald-700 hover:underline">
         ← Cámaras
       </Link>
@@ -471,7 +514,7 @@ export default function CamaraVista() {
           {modo === 'editar' && maquinaObjetivo && (
             <div className="flex flex-wrap items-center gap-3 text-sm bg-orange-50 border border-orange-200 rounded-lg px-4 py-3">
               <p className="flex-1 text-slate-700">
-                Editando la zona de <span className="font-semibold">{maquinaObjetivo.nombre}</span>: arrastra los puntos.
+                Editando la zona de <span className="font-semibold">{maquinaObjetivo.nombre}</span>: arrastra los puntos o selecciónalos y muévelos con las flechas del teclado.
               </p>
               <button type="button" onClick={() => guardarZona(objetivo).catch((err) => setAviso(err.message))} className="px-3 py-1.5 rounded-md bg-emerald-600 text-white">
                 Guardar zona
@@ -482,7 +525,7 @@ export default function CamaraVista() {
               {confirmarQuitar ? (
                 <span className="inline-flex items-center gap-2">
                   ¿Quitar de la cámara?
-                  <button type="button" onClick={quitar} className="px-2.5 py-1 rounded-md bg-red-600 text-white">Sí, quitar</button>
+                  <button type="button" onClick={() => quitar().catch((err) => setAviso(err.message))} className="px-2.5 py-1 rounded-md bg-red-600 text-white">Sí, quitar</button>
                   <button type="button" onClick={() => setConfirmarQuitar(false)} className="px-2.5 py-1 rounded-md border border-slate-300 bg-white">No</button>
                 </span>
               ) : (
@@ -498,9 +541,10 @@ export default function CamaraVista() {
           {modo === 'asignar' && (
             <AsignarZona camara={camara} equipos={equipos} onCancelar={cancelar} onAsignar={guardarZona} />
           )}
+          {errorEquipos && <p className="text-sm text-red-600">{errorEquipos}</p>}
           {aviso && <p className="text-sm text-emerald-700">{aviso}</p>}
           <p className="text-xs text-slate-400">
-            Las cabezas llegan difuminadas desde el pipeline: el sistema mide uso de máquinas, no identifica personas.
+            Las cabezas y rostros llegan difuminados desde el pipeline: el sistema mide uso de máquinas, no identifica personas.
             Caja blanca: persona sobre una máquina; punteada: persona que no está usando ninguna.
           </p>
         </div>

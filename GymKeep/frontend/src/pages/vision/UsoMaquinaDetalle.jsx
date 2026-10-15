@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { visionApi } from '../../api/vision.js'
 import CategoriaEquipoBadge from '../../components/CategoriaEquipoBadge.jsx'
@@ -9,6 +9,7 @@ import { formatearFechaHora, formatearMonto } from '../../utils/formato.js'
 import GraficoUsoDiario from './GraficoUsoDiario.jsx'
 import { ChipVivo, FotoMaquina } from './UsoMaquinas.jsx'
 import { formatearCronometro, formatearHoras, haceCuanto } from './uso.js'
+import usePolling from './usePolling.js'
 
 const ESTILO_SESION = {
   abierta: 'bg-blue-50 text-blue-700',
@@ -53,11 +54,7 @@ export default function UsoMaquinaDetalle() {
     [id],
   )
 
-  useEffect(() => {
-    cargar()
-    const temporizador = setInterval(cargar, 10000)
-    return () => clearInterval(temporizador)
-  }, [cargar])
+  usePolling(cargar, 10000, { clave: id })
 
   async function cambiarFoto(accion) {
     setMensajeFoto(null)

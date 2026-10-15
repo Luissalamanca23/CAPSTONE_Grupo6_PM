@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -19,8 +20,12 @@ from gymkeep_vision.config import RAIZ
 ZONA_HORARIA = ZoneInfo("America/Santiago")
 
 
-def _cliente(url: str) -> httpx.Client:
-    return httpx.Client(base_url=url.rstrip("/"), timeout=10)
+def _cliente(url: str, clave: str | None = None) -> httpx.Client:
+    """Cliente de la API. Con clave del pipeline (`--clave-pipeline` o la variable de entorno
+    VISION_PIPELINE_KEY) la envia en `X-Pipeline-Key` en TODAS las llamadas."""
+    clave = clave or os.environ.get("VISION_PIPELINE_KEY")
+    cabeceras = {"X-Pipeline-Key": clave} if clave else {}
+    return httpx.Client(base_url=url.rstrip("/"), timeout=10, headers=cabeceras)
 
 
 def cmd_procesar(args) -> int:
@@ -30,7 +35,7 @@ def cmd_procesar(args) -> int:
 
     from gymkeep_vision import vivo
 
-    cliente = _cliente(args.api) if args.api else None
+    cliente = _cliente(args.api, args.clave_pipeline) if args.api else None
     publicador = None
     if args.camara:
         # Zonas y parametros salen de la plataforma (lo que se dibujo en el panel); el YAML,
@@ -65,7 +70,9 @@ def cmd_procesar(args) -> int:
     api = None
     if args.api:
         resolver_ids(cliente, cfg, registrar=args.registrar)
-        api = DestinoAPI(cliente)
+        # Lo que la API no alcance a recibir queda en eventos_pendientes.jsonl y se reintenta
+        # al volver a arrancar con la misma carpeta de salida.
+        api = DestinoAPI(cliente, ruta_pendientes=salida / "eventos_pendientes.jsonl")
         destinos.append(api)
         logging.info(
             "GymKeep: camara %s -> id %s; equipos %s",
@@ -102,12 +109,10 @@ def cmd_procesar(args) -> int:
     print(reporte.imprimir(resumen))
     print(f"\nResultados en: {salida}")
     if api is not None:
-        print(f"Eventos enviados a GymKeep: {api.enviados} (fallidos: {len(api.fallidos)})")
-        if api.fallidos:
-            with (salida / "eventos_pendientes.jsonl").open("w", encoding="utf-8") as f:
-                for evento in api.fallidos:
-                    f.write(json.dumps(evento, ensure_ascii=False) + "\n")
-            print("Los fallidos quedaron en eventos_pendientes.jsonl (reenviar con el comando 'enviar').")
+        print(f"Eventos enviados a GymKeep: {api.enviados} (pendientes: {api.pendientes}, rechazados: {len(api.fallidos)})")
+        if api.pendientes:
+            print("Los pendientes quedaron en eventos_pendientes.jsonl: se reintentan al volver a procesar con la misma "
+                  "carpeta de salida, o con el comando 'enviar'.")
     return 0
 
 
@@ -116,14 +121,14 @@ def cmd_enviar(args) -> int:
     from gymkeep_vision.eventos import DestinoAPI, completar_ids, resolver_ids
 
     cfg = config_mod.cargar(args.config)
-    cliente = _cliente(args.api)
+    cliente = _cliente(args.api, args.clave_pipeline)
     resolver_ids(cliente, cfg, registrar=args.registrar)
     eventos = [json.loads(l) for l in Path(args.eventos).read_text(encoding="utf-8").splitlines() if l.strip()]
     eventos.sort(key=lambda e: (e["metadata"]["t_emision_s"], e["metadata"]["t_s"]))
     api = DestinoAPI(cliente)
     sesiones = set()
     for evento in eventos:
-        respuesta = api.enviar(completar_ids(evento, cfg))
+        respuesta = api.enviar_ahora(completar_ids(evento, cfg))
         if respuesta and respuesta.get("sesion_uso_id"):
             sesiones.add(respuesta["sesion_uso_id"])
     print(f"Enviados {api.enviados}/{len(eventos)} eventos; sesiones de uso tocadas en GymKeep: {len(sesiones)}")
@@ -184,6 +189,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--api", help="URL de la API GymKeep (ej. http://localhost:8000) para enviar eventos en vivo")
     p.add_argument("--registrar", action="store_true", help="crea en GymKeep la camara/equipos/modelo que falten")
     p.add_argument(
+        "--clave-pipeline",
+        help="clave del pipeline (cabecera X-Pipeline-Key); por defecto la variable de entorno VISION_PIPELINE_KEY",
+    )
+    p.add_argument(
         "--camara",
         help="codigo de la camara en GymKeep: toma zonas y parametros de la plataforma y publica en vivo (requiere --api)",
     )
@@ -209,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("-c", "--config", required=True)
     p.add_argument("--api", required=True)
     p.add_argument("--registrar", action="store_true")
+    p.add_argument("--clave-pipeline", help="clave del pipeline (por defecto VISION_PIPELINE_KEY)")
     p.set_defaults(func=cmd_enviar)
 
     p = sub.add_parser("recalibrar", help="prueba parametros sobre presencia.csv de una corrida (sin YOLO)")

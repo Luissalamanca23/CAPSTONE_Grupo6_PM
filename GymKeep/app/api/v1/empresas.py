@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -9,7 +9,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=list[EmpresaOut])
-def listar_empresas(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def listar_empresas(skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db)):
     """Lista las empresas (clientes/organizaciones) registradas. Para el Capstone suele
     existir una sola, creada por la data de ejemplo (seed.sql)."""
     return crud_empresa.list_empresas(db, skip=skip, limit=limit)
