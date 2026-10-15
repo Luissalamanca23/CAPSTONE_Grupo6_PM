@@ -78,6 +78,8 @@ class ConfigMaquina:
     equipo_id: int | None = None  # equipos.id en GymKeep (se resuelve por codigo_activo)
     categoria: str | None = None
     criterio: str | None = None  # si falta, usa criterio_zona global
+    # Puestos lado a lado (ej. polea doble), de izquierda a derecha; None = uno solo. Ver puestos.py.
+    puestos: list[str] | None = None
 
 
 @dataclass
@@ -148,6 +150,7 @@ def cargar(ruta: str | Path) -> Config:
             equipo_id=m.get("equipo_id"),
             categoria=m.get("categoria"),
             criterio=m.get("criterio"),
+            puestos=m.get("puestos"),
         )
         for m in datos.get("maquinas", [])
     ]
@@ -203,6 +206,7 @@ def desde_api(datos: dict, base: Config | None = None) -> Config:
                 roi=[[float(x), float(y)] for x, y in m["roi"]],
                 equipo_id=m["equipo_id"],
                 categoria=m.get("categoria"),
+                puestos=m.get("puestos"),
             )
             for m in datos["maquinas"]
         ],

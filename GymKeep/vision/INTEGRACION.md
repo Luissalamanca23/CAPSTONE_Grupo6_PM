@@ -84,6 +84,7 @@ Dos protecciones, ambas opcionales (vacías = abiertas, para desarrollo):
 | `GET /camaras` | panel | Cámaras con `en_linea`, `tiene_cuadro`, `maquinas` (con zona), `ultima_conexion`. En `rtsp_url` el usuario y la clave van ocultos (`rtsp://***@ip/...`) |
 | `GET /camaras/{id}` | panel | Detalle: `lista_maquinas` (con su `roi`) y `parametros` |
 | `PUT /camaras/{id}/maquinas/{equipo_id}` | panel (con PIN) | Crea o reemplaza la zona. Cuerpo: `{"puntos": [[0.1, 0.5], [0.4, 0.5], [0.4, 0.9]]}` (3 a 40 puntos, entre 0 y 1). La máquina debe ser de la misma sucursal. Una máquina nueva se crea antes con `POST /equipamiento/` |
+| `PUT /camaras/{id}/maquinas/{equipo_id}/puestos` | panel (con PIN) | Divide la zona en puestos lado a lado (ej. polea doble): `{"nombres": ["Izquierda", "Derecha"]}`, de izquierda a derecha, en franjas verticales iguales. Un solo nombre quita la división. Redibujar la zona conserva los puestos |
 | `DELETE /camaras/{id}/maquinas/{equipo_id}` | panel (con PIN) | Quita la máquina de la cámara; el equipo sigue en el inventario |
 | `PUT /camaras/{id}/parametros` | panel (con PIN) | `{"t_on_s": 30, "t_off_s": 90, "confianza_min": 0.5, "gracia_s": 2, "escala_tiempo": 1, "t_max_s": 10800}`; valida que T_off sea mayor que la gracia. `t_max_s` (600 a 86400, por defecto 10800) es la duración máxima de una sesión; si se omite se usa el valor por defecto |
 | `GET /camaras/{id}/configuracion` | pipeline (con clave) | Máquinas activas con zona, más los parámetros (incluido `t_max_s`) |
@@ -165,6 +166,13 @@ VISION_CAMARA=CAM-01 VISION_FUENTE=rtsp://IP_DE_LA_CAMARA/RUTA \
   sesión que termina porque la persona se quedó quieta más que T_off se cierra con `cierre =
   "inactividad"`. Ver `vision/README.md`.
 - `VISION_HILOS`: con varias cámaras en el mismo equipo, limita los hilos de cada pipeline.
+- Puestos (polea doble): en una máquina con varios puestos, el estado en vivo trae `puestos: [{nombre,
+  ocupado, personas}]`. Una persona ocupa el puesto donde están sus pies y, con pose, los puestos a
+  los que llega con el brazo extendido al costado (cruce de poleas: los dos). La sesión de uso
+  sigue siendo de la máquina. Medido en video real: en zonas de un solo puesto, el sistema marca
+  falsamente "dos puestos" en el 1 % del tiempo (antes de exigir el brazo extendido, 10–25 %). En
+  los videos de prueba nadie hace un cruce de poleas, así que el caso "usa los dos" está probado
+  solo con datos sintéticos.
 - `--perfil rpi` (Raspberry Pi 5 o notebook sin GPU): 2,5 análisis/s, YOLO solo con movimiento
   cerca de las máquinas y modelo NCNN; mediciones en `vision/README.md`.
 - Si el panel entrega parámetros incoherentes (por ejemplo `t_off_s` no mayor que `gracia_s`),

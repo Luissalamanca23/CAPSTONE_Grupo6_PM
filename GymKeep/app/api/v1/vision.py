@@ -28,6 +28,7 @@ from app.schemas.vision import (
     MaquinaUsoDetalle,
     MaquinaUsoResumen,
     ParametrosVision,
+    PuestosIn,
     RoiIn,
 )
 from app.services import vision_service as servicio
@@ -109,6 +110,21 @@ def guardar_zona(camara_id: int, equipo_id: int, roi: RoiIn, db: Session = Depen
     if equipo.sucursal_id != camara.sucursal_id:
         raise HTTPException(status_code=400, detail="La maquina y la camara son de sucursales distintas.")
     return servicio.guardar_roi(db, camara, equipo, roi.puntos)
+
+
+@router.put(
+    "/camaras/{camara_id}/maquinas/{equipo_id}/puestos",
+    response_model=MaquinaEnCamara,
+    dependencies=[Depends(verificar_pin)],
+)
+def guardar_puestos(camara_id: int, equipo_id: int, puestos: PuestosIn, db: Session = Depends(get_db)):
+    """Divide la zona de una maquina en puestos lado a lado (ej. una polea doble: `{"nombres":
+    ["Izquierda", "Derecha"]}`). La sesion de uso sigue siendo de la maquina; el estado en vivo
+    dice que puestos estan ocupados. Un solo nombre quita la division."""
+    maquina = servicio.guardar_puestos(db, _camara(db, camara_id), equipo_id, puestos.nombres)
+    if maquina is None:
+        raise HTTPException(status_code=404, detail="Esa maquina no tiene zona en esta camara.")
+    return maquina
 
 
 @router.delete("/camaras/{camara_id}/maquinas/{equipo_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verificar_pin)])

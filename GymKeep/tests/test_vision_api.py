@@ -114,6 +114,27 @@ def test_dibujar_editar_y_quitar_la_zona_de_una_maquina(client, mongo, camara_y_
     assert client.get(f"/api/v1/vision/camaras/{camara_id}").json()["lista_maquinas"] == []
 
 
+def test_puestos_de_una_polea_doble(client, mongo, camara_y_equipo):
+    camara_id, equipo_id = camara_y_equipo
+    url = f"/api/v1/vision/camaras/{camara_id}/maquinas/{equipo_id}"
+    assert client.put(f"{url}/puestos", json={"nombres": ["Izquierda", "Derecha"]}).status_code == 404  # sin zona
+    client.put(url, json=ZONA)
+    respuesta = client.put(f"{url}/puestos", json={"nombres": ["Izquierda", "Derecha"]})
+    assert respuesta.status_code == 200 and respuesta.json()["puestos"] == ["Izquierda", "Derecha"]
+    # Llega al pipeline y se conserva al redibujar la zona.
+    client.put(url, json={"puntos": [[0.2, 0.2], [0.5, 0.2], [0.5, 0.6]]})
+    config = client.get(f"/api/v1/vision/camaras/{camara_id}/configuracion").json()
+    assert config["maquinas"][0]["puestos"] == ["Izquierda", "Derecha"]
+    # Un solo nombre quita la division; nombres vacios se rechazan.
+    assert client.put(f"{url}/puestos", json={"nombres": ["Unico"]}).json()["puestos"] is None
+    assert client.put(f"{url}/puestos", json={"nombres": ["A", " "]}).status_code == 422
+    # El estado en vivo puede traer los puestos.
+    estado = estado_vivo(equipo_id)
+    estado["maquinas"][0]["puestos"] = [{"nombre": "Izquierda", "ocupado": True, "personas": 1}]
+    assert client.post(f"/api/v1/vision/camaras/{camara_id}/vivo", json=estado).status_code == 202
+    assert client.get(f"/api/v1/vision/camaras/{camara_id}/vivo").json()["maquinas"][0]["puestos"][0]["ocupado"]
+
+
 def test_zona_invalida_se_rechaza(client, mongo, camara_y_equipo):
     camara_id, equipo_id = camara_y_equipo
     url = f"/api/v1/vision/camaras/{camara_id}/maquinas/{equipo_id}"
