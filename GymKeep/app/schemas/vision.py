@@ -50,6 +50,9 @@ class ParametrosVision(BaseModel):
     confianza_min: float = Field(0.50, ge=0.05, le=0.95, description="MP-47: confianza minima de una persona.")
     gracia_s: float = Field(2, ge=0, le=60, description="Huecos de deteccion que no cuentan como ausencia.")
     escala_tiempo: float = Field(1.0, gt=0, le=10, description="Segundos reales por segundo de video.")
+    t_max_s: float = Field(
+        10800, ge=600, le=86400, description="Duracion maxima de una sesion: pasado esto el pipeline la cierra."
+    )
 
     @model_validator(mode="after")
     def _t_off_mayor_que_gracia(self):

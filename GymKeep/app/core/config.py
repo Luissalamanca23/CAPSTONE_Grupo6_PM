@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     # panel. Vacio = edicion libre (desarrollo). Ver app/core/pin.py.
     vision_pin: str = ""
 
+    # Clave compartida entre la API y el pipeline de vision (cabecera X-Pipeline-Key). Protege los
+    # endpoints que solo usa el pipeline. Vacia = abiertos (desarrollo). Ver app/core/pipeline_key.py.
+    vision_pipeline_key: str = ""
+
+    # Cada cuantos segundos la API revisa y cierra sesiones de uso huerfanas (0 = desactivado).
+    vision_watchdog_s: int = 60
+
     @field_validator("vision_pin")
     @classmethod
     def _pin_valido(cls, valor: str) -> str:
