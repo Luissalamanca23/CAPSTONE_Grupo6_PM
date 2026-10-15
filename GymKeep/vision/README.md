@@ -146,11 +146,33 @@ Plantilla comentada: [`config/ejemplo_camara.yaml`](config/ejemplo_camara.yaml).
 | `parametros.confianza_min` | Confianza mínima de una persona para contar (MP-47) | 0,50 |
 | `parametros.gracia_s` | Huecos de detección que no cuentan como ausencia | 2 s |
 | `parametros.t_max_s` | Duración máxima de una sesión: al superarla se cierra (`t_max`) y, si sigue habiendo presencia, empieza otra | 10800 s |
+| `actividad.habilitada` | Mide la actividad con el modelo de pose (`yolo26n-pose.pt`, o `--actividad`): quien está encima de la máquina sin entrenar no cuenta como uso | `false` |
+| `actividad.umbral` | Movimiento mínimo de codos, muñecas, rodillas y tobillos (en alturas de la persona, ventana de 4 s) para contar como activa | 0.08 |
 | `parametros.intervalo_analisis_s` | Cada cuánto se analiza un cuadro | 0,2 s |
 | `parametros.criterio_zona` | `pie` (centro inferior de la persona), `centro` o `solape` | `pie` |
 | `escala_tiempo` | Segundos reales por segundo de video (videos de grabador acelerados) | 1,0 |
 | `modelo.pesos`, `modelo.imgsz` | Modelo YOLO y resolución de inferencia | `yolo26n.pt`, 640 |
 | `privacidad.difuminar_personas` | Difumina cabezas y rostros (YuNet) en video, evidencias e imagen del panel | `true` |
+
+## Uso frente a presencia (actividad)
+
+Con `--actividad` (o `actividad.habilitada: true`), el pipeline usa la versión con pose del
+modelo y mide cuánto se mueven brazos y piernas de cada persona (`gymkeep_vision/actividad.py`):
+
+- Una persona quieta sobre la máquina (sentada mirando el celular, conversando) cuenta como
+  ausencia para T_on y T_off: no abre ni sostiene una sesión. La máquina se muestra
+  **"ocupada sin uso"** (`ocupada`) y no suma horas.
+- El descanso entre series sigue dentro de la sesión mientras dure menos que T_off. Si alguien
+  se queda quieto más que eso, la sesión se cierra con `cierre = "inactividad"`, en su último
+  movimiento.
+- Medido en videos de gimnasio: quieto da 0.01–0.06 y un ejercicio 0.12–0.75. En 10 minutos de una
+  sala con 7 máquinas, el uso registrado bajó un 23 %: lo descartado era gente sentada o
+  conversando junto a las máquinas (por ejemplo, un entrenador de pie al lado de una banca).
+- La pose reemplaza al detector (también detecta personas), así que el costo por cuadro es
+  similar. En cámaras de baja resolución, donde la pose no es confiable, conviene no activarla.
+
+Con varias cámaras en el mismo equipo, `VISION_HILOS` (por ejemplo `2`) limita los hilos de cada
+pipeline y hace que esperen sin consumir CPU.
 
 ## Tests
 

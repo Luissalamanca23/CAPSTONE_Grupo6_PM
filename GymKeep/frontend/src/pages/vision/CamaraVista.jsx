@@ -146,7 +146,7 @@ function Escenario({ url, maquinas, personas, vivoPorEquipo, modo, puntos, setPu
             width={(p.caja[2] - p.caja[0]) * 100}
             height={(p.caja[3] - p.caja[1]) * 100}
             fill="none"
-            stroke={p.equipo_id ? '#ffffff' : '#cbd5e1'}
+            stroke={p.equipo_id ? (p.activa === false ? '#a78bfa' : '#ffffff') : '#cbd5e1'}
             strokeWidth={p.equipo_id ? 2 : 1}
             strokeDasharray={p.equipo_id ? '' : '4 3'}
             vectorEffect="non-scaling-stroke"
@@ -545,7 +545,7 @@ export default function CamaraVista() {
           {aviso && <p className="text-sm text-emerald-700">{aviso}</p>}
           <p className="text-xs text-slate-400">
             Las cabezas y rostros llegan difuminados desde el pipeline: el sistema mide uso de máquinas, no identifica personas.
-            Caja blanca: persona sobre una máquina; punteada: persona que no está usando ninguna.
+            Caja blanca: persona sobre una máquina; violeta: sobre una máquina pero sin entrenar (si la cámara mide actividad); punteada: persona que no está usando ninguna.
           </p>
         </div>
 

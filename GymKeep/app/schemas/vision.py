@@ -11,7 +11,8 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Punto = tuple[float, float]
-EstadoMaquinaVivo = Literal["libre", "candidata", "en_uso", "pausa"]
+# "ocupada": alguien encima sin entrenar (solo si el pipeline mide actividad con pose).
+EstadoMaquinaVivo = Literal["libre", "candidata", "en_uso", "pausa", "ocupada"]
 
 
 # ---------------------------------------------------------------- camaras y ROI
@@ -114,6 +115,7 @@ class PersonaVivo(BaseModel):
     confianza: float = Field(ge=0, le=1)
     track_id: Optional[int] = None
     equipo_id: Optional[int] = Field(default=None, description="Maquina a la que quedo asignada, si alguna.")
+    activa: Optional[bool] = Field(default=None, description="Si se mueve como quien entrena (pose); None si no se mide.")
 
 
 class ModeloVivo(BaseModel):

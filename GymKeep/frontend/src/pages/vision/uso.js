@@ -41,6 +41,8 @@ export const ESTADOS_VIVO = {
   candidata: { etiqueta: 'Detectando', punto: 'bg-amber-500', chip: 'bg-amber-50 text-amber-700', relleno: '#f59e0b' },
   en_uso: { etiqueta: 'En uso', punto: 'bg-blue-600', chip: 'bg-blue-50 text-blue-700', relleno: '#2563eb' },
   pausa: { etiqueta: 'En pausa', punto: 'bg-sky-400', chip: 'bg-sky-50 text-sky-700', relleno: '#38bdf8' },
+  // Alguien encima sin entrenar (sentado, mirando el celular): no suma uso. Requiere --actividad.
+  ocupada: { etiqueta: 'Ocupada sin uso', punto: 'bg-violet-400', chip: 'bg-violet-50 text-violet-700', relleno: '#a78bfa' },
 }
 
 /** Texto del estado en vivo con su cronometro ("En uso 04:39", "Detectando 12/30 s"). */

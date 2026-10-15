@@ -159,6 +159,12 @@ VISION_CAMARA=CAM-01 VISION_FUENTE=rtsp://IP_DE_LA_CAMARA/RUTA \
   "t_max"`; si sigue habiendo presencia, empieza otra (aplicando T_on).
 - Operación 24/7: `presencia.csv` rota por día o a los 50 MB (guarda 7 archivos) y en memoria
   quedan solo los últimos 1000 eventos.
+- Actividad (`--actividad`, modelo de pose): quien está sobre la máquina sin entrenar no cuenta
+  como uso; la máquina queda en estado `ocupada` ("Ocupada sin uso" en el panel, no cuenta como
+  en uso) y cada persona trae `activa` (`true`/`false`, o `null` si todavía no se sabe). Una
+  sesión que termina porque la persona se quedó quieta más que T_off se cierra con `cierre =
+  "inactividad"`. Ver `vision/README.md`.
+- `VISION_HILOS`: con varias cámaras en el mismo equipo, limita los hilos de cada pipeline.
 - Si el panel entrega parámetros incoherentes (por ejemplo `t_off_s` no mayor que `gracia_s`),
   el pipeline lo registra como aviso, aplica las zonas y conserva los parámetros anteriores.
 - `docker stop` (o Ctrl+C) cierra las sesiones abiertas antes de salir.
