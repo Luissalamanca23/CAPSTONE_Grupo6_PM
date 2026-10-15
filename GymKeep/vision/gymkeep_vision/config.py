@@ -9,6 +9,7 @@ from pathlib import Path
 import yaml
 
 from gymkeep_vision.actividad import ParametrosActividad
+from gymkeep_vision.movimiento import ParametrosMovimiento
 from gymkeep_vision.sesiones import ParametrosUso
 
 RAIZ = Path(__file__).resolve().parents[1]  # GymKeep/vision/
@@ -39,6 +40,26 @@ class ConfigModelo:
     # ByteTrack usa las detecciones debiles para no perder a una persona tapada por la
     # maquina. La presencia en la ROI se decide despues con confianza_min (MP-47).
     confianza_detector: float = 0.10
+    # 'pt' (PyTorch) o 'ncnn': NCNN es el formato mas rapido en CPU ARM (Raspberry Pi). El
+    # modelo NCNN se exporta solo la primera vez, para el `imgsz` configurado.
+    formato: str = "pt"
+
+    def ruta_modelo(self) -> str:
+        """Lo que se le pasa a YOLO(): los pesos .pt, o la carpeta NCNN (exportada si falta)."""
+        pesos = self.ruta_pesos()
+        if self.formato != "ncnn":
+            return pesos
+        carpeta = Path(pesos).with_name(f"{Path(pesos).stem}_{self.imgsz}_ncnn_model")
+        if not carpeta.exists():
+            from ultralytics import YOLO
+
+            exportada = Path(YOLO(pesos).export(format="ncnn", imgsz=self.imgsz))
+            exportada.rename(carpeta)
+        return str(carpeta)
+
+    @property
+    def tarea(self) -> str:
+        return "pose" if "-pose" in Path(self.pesos).stem else "detect"
 
     def ruta_pesos(self) -> str:
         ruta = Path(self.pesos)
@@ -79,6 +100,8 @@ class Config:
     # Medir actividad con un modelo de pose (actividad.py): distingue usar la maquina de solo
     # estar encima. None = no se mide (toda presencia cuenta como uso).
     actividad: ParametrosActividad | None = None
+    # Saltar YOLO cuando nada cambia cerca de las maquinas (movimiento.py). None = siempre YOLO.
+    movimiento: ParametrosMovimiento | None = None
     ruta: Path | None = None
 
     def con_actividad(self, parametros: ParametrosActividad | None = None) -> "Config":
@@ -199,4 +222,5 @@ def desde_api(datos: dict, base: Config | None = None) -> Config:
         escala_tiempo=parametros.get("escala_tiempo", 1.0),
         difuminar_personas=base.difuminar_personas if base else True,
         actividad=base.actividad if base else None,
+        movimiento=base.movimiento if base else None,
     )

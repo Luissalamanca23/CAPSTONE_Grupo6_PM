@@ -24,6 +24,7 @@ import numpy as np
 
 from gymkeep_vision import rostros, tiempo
 from gymkeep_vision.actividad import MedidorActividad
+from gymkeep_vision.movimiento import DetectorMovimiento
 from gymkeep_vision.captura import LectorVivo
 from gymkeep_vision.config import Config, ConfigMaquina
 from gymkeep_vision.eventos import construir_evento
@@ -97,6 +98,9 @@ class Pipeline:
         self.cfg = cfg
         # Actividad por pose (actividad.py): solo si la config la pide.
         self.medidor = MedidorActividad(cfg.actividad) if cfg.actividad else None
+        # Saltar YOLO cuando la escena no cambia (movimiento.py): solo si la config lo pide.
+        self.movimiento = DetectorMovimiento(cfg.movimiento) if cfg.movimiento else None
+        self._ultimas_detecciones: list[Deteccion] = []
         self._activa: dict = {}
         # Conexion en vivo con la plataforma (vivo.PublicadorVivo), opcional.
         self.publicador = publicador
@@ -157,7 +161,7 @@ class Pipeline:
             indice = int(self.desde_s * fps)
             captura.set(cv2.CAP_PROP_POS_FRAMES, indice)
 
-        modelo = YOLO(self.cfg.modelo.ruta_pesos())
+        modelo = YOLO(self.cfg.modelo.ruta_modelo(), task=self.cfg.modelo.tarea)
         self.salida.mkdir(parents=True, exist_ok=True)
         (self.salida / "evidencias").mkdir(exist_ok=True)
         resultado = Resultado(self.cfg, self.fuente, self.inicio_video, self.monitores)
@@ -234,8 +238,13 @@ class Pipeline:
                     break
 
                 inicio_computo = time.perf_counter()
-                detecciones = self._detectar(modelo, cuadro)
-                activa = self._activa = self.medidor.actualizar(t, detecciones) if self.medidor else {}
+                if self.movimiento is None or self.movimiento.hay_que_analizar(t, cuadro):
+                    detecciones = self._ultimas_detecciones = self._detectar(modelo, cuadro)
+                    activa = self._activa = self.medidor.actualizar(t, detecciones) if self.medidor else {}
+                else:
+                    # Nada cambio: mismas personas y misma actividad. No se le pasan al medidor
+                    # muestras repetidas, que lo harian ver quieta a quien entrena.
+                    detecciones, activa = self._ultimas_detecciones, self._activa
                 # Se asignan todas las detecciones y despues se filtra por confianza_min: asi
                 # presencia.csv guarda la confianza aunque no llegue al umbral, y el comando
                 # `recalibrar` puede probar otros umbrales sin volver a correr YOLO.
@@ -309,6 +318,12 @@ class Pipeline:
             resultado.interrumpido = True
             log.warning("Interrumpido: se cierran las sesiones abiertas")
         finally:
+            if self.movimiento is not None and self.movimiento.analizados:
+                total = self.movimiento.analizados + self.movimiento.omitidos
+                log.info(
+                    "YOLO corrio en %d de %d analisis (%.0f %% sin movimiento cerca de las maquinas)",
+                    self.movimiento.analizados, total, 100 * self.movimiento.omitidos / total,
+                )
             motivo = "interrumpido" if resultado.interrumpido else "fin_de_video"
             for nombre, monitor in self.monitores.items():
                 for ev in monitor.finalizar(t, motivo):
@@ -336,6 +351,8 @@ class Pipeline:
                     zona.escalar(ancho / ref_ancho, alto / ref_alto)
         for zona in self.zonas:
             zona.preparar(alto, ancho)
+        if self.movimiento is not None:
+            self.movimiento.preparar([zona.poligono for zona in self.zonas], ancho, alto)
             x_min, y_min = zona.poligono.min(axis=0)
             x_max, y_max = zona.poligono.max(axis=0)
             if x_min <= 2 or y_min <= 2 or x_max >= ancho - 3 or y_max >= alto - 3:

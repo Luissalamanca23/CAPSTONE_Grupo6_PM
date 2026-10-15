@@ -174,6 +174,30 @@ modelo y mide cuánto se mueven brazos y piernas de cada persona (`gymkeep_visio
 Con varias cámaras en el mismo equipo, `VISION_HILOS` (por ejemplo `2`) limita los hilos de cada
 pipeline y hace que esperen sin consumir CPU.
 
+## Equipos chicos (Raspberry Pi 5, notebook sin GPU)
+
+`--perfil rpi` combina los ajustes que bajan el costo sin cambiar lo que se mide:
+
+| Opción | Qué hace |
+|---|---|
+| `--intervalo 0.4` | 2,5 análisis por segundo en vez de 5: T_on es 30 s y la actividad mira 4 s, así que alcanza |
+| `--movimiento` | Corre YOLO solo si algo cambió cerca de las máquinas; si no, repite las detecciones anteriores (al menos un análisis cada 3 s) |
+| `--ncnn` | Modelo en formato NCNN, el más rápido en CPU ARM. Se exporta solo la primera vez (necesita internet esa vez) |
+
+Medido en CPU con 4 núcleos, 10 minutos de video con `--actividad`:
+
+| Configuración | CPU | Uso medido |
+|---|---|---|
+| 5 análisis/s (por defecto) | 283 s | referencia |
+| `--intervalo 0.4` | 156 s (−45 %) | igual (±2 s por máquina) |
+| `--intervalo 0.4 --movimiento`, sala llena | 152 s (−46 %) | igual; YOLO se saltó 4 % de los análisis |
+| `--intervalo 0.4 --movimiento`, sala tranquila | −41 % adicional | igual; YOLO se saltó 42 % de los análisis |
+| `--imgsz 480` | −16 % | **peor**: la pose de las personas lejanas sale tan chica que parecen quietas (no se usa en el perfil) |
+
+NCNN no gana en un PC x86 (es más lento que PyTorch ahí); su ventaja es en ARM y hay que medirla
+en la Raspberry. Si no conviene, `--intervalo 0.4 --movimiento` da el mismo ahorro sin NCNN.
+Con varias cámaras en el mismo equipo, usar también `VISION_HILOS`.
+
 ## Tests
 
 ```bash

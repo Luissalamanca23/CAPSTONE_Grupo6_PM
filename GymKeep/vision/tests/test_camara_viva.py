@@ -129,7 +129,7 @@ def test_corte_corto_no_cierra_la_sesion_y_corte_largo_si(pipeline):
 
 
 class ModeloFalso:
-    def __init__(self, *_):
+    def __init__(self, *_, **__):
         pass
 
     def track(self, cuadro, **_):

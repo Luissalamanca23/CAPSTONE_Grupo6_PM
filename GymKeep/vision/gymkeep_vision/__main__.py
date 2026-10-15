@@ -55,6 +55,7 @@ def cmd_procesar(args) -> int:
     cfg = cfg.con_parametros(
         t_on_s=args.t_on, t_off_s=args.t_off, confianza_min=args.confianza, escala_tiempo=args.escala_tiempo
     )
+    cfg = _aplicar_rendimiento(cfg, args)
     if args.actividad:
         cfg = cfg.con_actividad()
     if cfg.actividad:
@@ -215,6 +216,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--verdad", help="CSV con el uso real anotado a mano: agrega error e IoU al resumen y al grafico")
     p.add_argument("--sin-video", action="store_true", help="no genera el video anotado (mas rapido)")
     p.add_argument("--mostrar", action="store_true", help="muestra el video anotado en una ventana (Q para salir)")
+    p.add_argument("--perfil", choices=sorted(PERFILES), help="combinacion probada de rendimiento (rpi: Raspberry Pi 5)")
+    p.add_argument("--intervalo", type=float, help="segundos entre analisis (0.2 = 5 por segundo)")
+    p.add_argument("--imgsz", type=int, help="tamano de imagen para YOLO (640, 480...)")
+    p.add_argument("--movimiento", action="store_true", help="corre YOLO solo si algo cambio cerca de las maquinas")
+    p.add_argument("--ncnn", action="store_true", help="usa el modelo en formato NCNN (rapido en CPU ARM)")
     p.add_argument(
         "--actividad",
         action="store_true",
@@ -257,6 +263,47 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s", datefmt="%H:%M:%S")
     _limitar_hilos(os.environ.get("VISION_HILOS"))
     return args.func(args)
+
+
+# Perfiles de rendimiento: combinaciones probadas para un tipo de equipo. Las opciones sueltas
+# (--intervalo, --imgsz, --movimiento, --ncnn) se aplican despues y ganan sobre el perfil.
+PERFILES = {
+    # Raspberry Pi 5 / notebook sin GPU: 2.5 analisis/s (T_on es 30 s y la actividad mira 4 s),
+    # YOLO solo si algo se movio cerca de las maquinas, y NCNN (lo mas rapido en CPU ARM).
+    # Se mantienen 640 px: a 480 la pose de las personas lejanas sale tan chica que parecen
+    # quietas y se pierde su uso (medido: una maquina del fondo paso de 4 min de uso a 0).
+    "rpi": {"intervalo": 0.4, "movimiento": True, "ncnn": True},
+}
+
+
+def _aplicar_rendimiento(cfg, args):
+    from dataclasses import replace
+
+    from gymkeep_vision.movimiento import ParametrosMovimiento
+
+    opciones = dict(PERFILES.get(args.perfil or "", {}))
+    opciones.update({k: v for k, v in {
+        "intervalo": args.intervalo, "imgsz": args.imgsz, "movimiento": args.movimiento or None, "ncnn": args.ncnn or None,
+    }.items() if v is not None})
+    if not opciones:
+        return cfg
+    modelo = cfg.modelo
+    if opciones.get("imgsz"):
+        modelo = replace(modelo, imgsz=opciones["imgsz"])
+    if opciones.get("ncnn"):
+        modelo = replace(modelo, formato="ncnn")
+    cfg = replace(
+        cfg,
+        modelo=modelo,
+        intervalo_analisis_s=opciones.get("intervalo", cfg.intervalo_analisis_s),
+        movimiento=ParametrosMovimiento() if opciones.get("movimiento") else cfg.movimiento,
+    )
+    logging.info(
+        "Rendimiento: %.1f analisis/s, %d px, %s, %s",
+        1 / cfg.intervalo_analisis_s, modelo.imgsz, modelo.formato,
+        "YOLO solo con movimiento" if cfg.movimiento else "YOLO en cada analisis",
+    )
+    return cfg
 
 
 def _limitar_hilos(valor: str | None) -> None:
