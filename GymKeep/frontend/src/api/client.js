@@ -35,6 +35,8 @@ export async function request(path, options = {}) {
 }
 
 export const api = {
+  // Conteos agregados (SQL) para el panel de gestion; no dependen de listas truncadas.
+  obtenerEstadisticas: () => request('/estadisticas/'),
   // Empresas / sucursales / zonas: jerarquia obligatoria para registrar equipamiento
   // (ver GymKeep_BDD_Completa). Para el Capstone normalmente hay una sola empresa/sucursal,
   // creada por la data de ejemplo (postgres/seed.sql).

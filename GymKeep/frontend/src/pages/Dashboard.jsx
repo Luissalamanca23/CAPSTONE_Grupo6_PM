@@ -11,16 +11,22 @@ import { formatearFechaHora } from '../utils/formato.js'
 const ORDEN_PRIORIDAD = { urgente: 4, alta: 3, media: 2, baja: 1 }
 
 export default function Dashboard() {
-  const [equipos, setEquipos] = useState([])
+  const [estadisticas, setEstadisticas] = useState(null)
   const [incidencias, setIncidencias] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    Promise.all([api.listarEquipos(), api.listarIncidencias()])
-      .then(([equiposData, incidenciasData]) => {
-        setEquipos(equiposData)
-        setIncidencias(incidenciasData)
+    // Los conteos vienen agregados desde el backend; la tabla solo necesita las
+    // incidencias abiertas (pendientes y en proceso).
+    Promise.all([
+      api.obtenerEstadisticas(),
+      api.listarIncidencias({ estado: 'pendiente', limit: 500 }),
+      api.listarIncidencias({ estado: 'en_proceso', limit: 500 }),
+    ])
+      .then(([estadisticasData, pendientesData, enProcesoData]) => {
+        setEstadisticas(estadisticasData)
+        setIncidencias([...pendientesData, ...enProcesoData])
       })
       .catch((err) => setError(err.message))
       .finally(() => setCargando(false))
@@ -28,10 +34,6 @@ export default function Dashboard() {
 
   if (cargando) return <p className="text-slate-500">Cargando panel...</p>
   if (error) return <p className="text-red-600">Error al cargar datos: {error}</p>
-
-  const pendientes = incidencias.filter((i) => i.estado === 'pendiente')
-  const enProceso = incidencias.filter((i) => i.estado === 'en_proceso')
-  const fueraDeServicio = equipos.filter((e) => e.estado === 'fuera_de_servicio')
 
   const urgentes = incidencias
     .filter((i) => i.estado !== 'resuelta' && i.estado !== 'descartada')
@@ -59,10 +61,10 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard titulo="Equipos registrados" valor={equipos.length} />
-        <StatCard titulo="Incidencias pendientes" valor={pendientes.length} />
-        <StatCard titulo="En proceso" valor={enProceso.length} />
-        <StatCard titulo="Equipos fuera de servicio" valor={fueraDeServicio.length} />
+        <StatCard titulo="Equipos registrados" valor={estadisticas.equipos_total} />
+        <StatCard titulo="Incidencias pendientes" valor={estadisticas.incidencias_por_estado.pendiente} />
+        <StatCard titulo="En proceso" valor={estadisticas.incidencias_por_estado.en_proceso} />
+        <StatCard titulo="Equipos fuera de servicio" valor={estadisticas.equipos_por_estado.fuera_de_servicio} />
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
