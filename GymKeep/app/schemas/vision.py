@@ -40,11 +40,6 @@ class MaquinaEnCamara(BaseModel):
     estado: str = Field(description="Estado del equipo en el inventario (operativo, en_mantenimiento...).")
     roi: Optional[list[Punto]] = Field(default=None, description="Poligono normalizado; None si no tiene zona.")
     activo: bool = True
-    puestos: Optional[list[str]] = Field(
-        default=None,
-        description="Nombres de los puestos (de izquierda a derecha) si la maquina tiene varios lado a lado; "
-        "la zona se divide en franjas verticales iguales. None = un solo puesto.",
-    )
 
 
 class ParametrosVision(BaseModel):
@@ -106,26 +101,6 @@ class ConfiguracionPipeline(BaseModel):
 # ---------------------------------------------------------------- en vivo
 
 
-class PuestosIn(BaseModel):
-    """Puestos lado a lado de una maquina (ej. una polea doble), de izquierda a derecha."""
-
-    nombres: list[str] = Field(min_length=1, max_length=4, description="Uno por puesto; uno solo = sin division.")
-
-    @field_validator("nombres")
-    @classmethod
-    def _sin_vacios(cls, nombres: list[str]) -> list[str]:
-        nombres = [n.strip() for n in nombres]
-        if any(not n or len(n) > 40 for n in nombres):
-            raise ValueError("cada puesto necesita un nombre de 1 a 40 caracteres")
-        return nombres
-
-
-class PuestoVivo(BaseModel):
-    nombre: str
-    ocupado: bool = Field(description="Alguien lo usa: sus pies o una de sus manos estan en la franja.")
-    personas: int = 0
-
-
 class MaquinaVivo(BaseModel):
     equipo_id: int
     estado: EstadoMaquinaVivo
@@ -133,7 +108,6 @@ class MaquinaVivo(BaseModel):
     progreso_s: Optional[float] = Field(default=None, ge=0, description="Cuanto lleva hacia T_on o T_off.")
     umbral_s: Optional[float] = Field(default=None, ge=0, description="T_on o T_off, segun el estado.")
     personas: int = 0
-    puestos: Optional[list[PuestoVivo]] = Field(default=None, description="Solo maquinas con varios puestos.")
 
 
 class PersonaVivo(BaseModel):

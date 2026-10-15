@@ -58,8 +58,6 @@ export const visionApi = {
   guardarZona: (camaraId, equipoId, puntos) =>
     conPin(`/vision/camaras/${camaraId}/maquinas/${equipoId}`, { method: 'PUT', body: JSON.stringify({ puntos }) }),
   quitarZona: (camaraId, equipoId) => conPin(`/vision/camaras/${camaraId}/maquinas/${equipoId}`, { method: 'DELETE' }),
-  guardarPuestos: (camaraId, equipoId, nombres) =>
-    conPin(`/vision/camaras/${camaraId}/maquinas/${equipoId}/puestos`, { method: 'PUT', body: JSON.stringify({ nombres }) }),
   guardarParametros: (camaraId, parametros) =>
     conPin(`/vision/camaras/${camaraId}/parametros`, { method: 'PUT', body: JSON.stringify(parametros) }),
 

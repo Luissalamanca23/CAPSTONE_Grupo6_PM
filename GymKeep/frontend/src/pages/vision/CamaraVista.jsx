@@ -9,21 +9,6 @@ import { ESTADOS_VIVO, textoEstadoVivo } from './uso.js'
 import usePolling from './usePolling.js'
 
 const COLOR_SIN_DATO = '#94a3b8'
-
-// Puestos lado a lado (ej. polea doble): la zona se divide en franjas verticales iguales.
-const NOMBRES_PUESTOS = { 1: ['Único'], 2: ['Izquierda', 'Derecha'], 3: ['Izquierda', 'Centro', 'Derecha'] }
-
-/** Franjas [x1, x2] (0..100) de cada puesto, y el alto [y1, y2] de la zona. */
-function franjasPuestos(roi, cantidad) {
-  const xs = roi.map(([x]) => x * 100)
-  const ys = roi.map(([, y]) => y * 100)
-  const x1 = Math.min(...xs)
-  const paso = (Math.max(...xs) - x1) / cantidad
-  return {
-    franjas: Array.from({ length: cantidad }, (_, i) => [x1 + i * paso, x1 + (i + 1) * paso]),
-    alto: [Math.min(...ys), Math.max(...ys)],
-  }
-}
 const COLOR_EDICION = '#f97316'
 const T_MAX_POR_DEFECTO = 10800
 const PASO_TECLADO = 0.005 // 0,5 % de la imagen por pulsacion; con Mayus, 2 %
@@ -141,45 +126,16 @@ function Escenario({ url, maquinas, personas, vivoPorEquipo, modo, puntos, setPu
           .filter((m) => m.roi && m.equipo_id !== editando)
           .map((m) => {
             const color = ESTADOS_VIVO[vivoPorEquipo[m.equipo_id]?.estado]?.relleno || COLOR_SIN_DATO
-            const puestosVivo = vivoPorEquipo[m.equipo_id]?.puestos
-            const division = m.puestos?.length > 1 ? franjasPuestos(m.roi, m.puestos.length) : null
             return (
-              <g key={m.equipo_id}>
-                <polygon
-                  points={aPuntos(m.roi)}
-                  fill={color}
-                  fillOpacity="0.22"
-                  stroke={color}
-                  strokeWidth="2"
-                  vectorEffect="non-scaling-stroke"
-                />
-                {division?.franjas.map(([x1, x2], i) => (
-                  <g key={i}>
-                    {puestosVivo?.[i]?.ocupado && (
-                      <rect
-                        x={x1}
-                        y={division.alto[0]}
-                        width={x2 - x1}
-                        height={division.alto[1] - division.alto[0]}
-                        fill={color}
-                        fillOpacity="0.35"
-                      />
-                    )}
-                    {i > 0 && (
-                      <line
-                        x1={x1}
-                        x2={x1}
-                        y1={division.alto[0]}
-                        y2={division.alto[1]}
-                        stroke="#ffffff"
-                        strokeWidth="1.5"
-                        strokeDasharray="4 3"
-                        vectorEffect="non-scaling-stroke"
-                      />
-                    )}
-                  </g>
-                ))}
-              </g>
+              <polygon
+                key={m.equipo_id}
+                points={aPuntos(m.roi)}
+                fill={color}
+                fillOpacity="0.22"
+                stroke={color}
+                strokeWidth="2"
+                vectorEffect="non-scaling-stroke"
+              />
             )
           })}
         {personas.map((p, i) => (
@@ -478,20 +434,6 @@ export default function CamaraVista() {
     cargarEquipos()
   }
 
-  async function cambiarPuestos(equipoId, cantidad) {
-    try {
-      await visionApi.guardarPuestos(camaraId, equipoId, NOMBRES_PUESTOS[cantidad])
-      setAviso(
-        cantidad > 1
-          ? `La máquina quedó con ${cantidad} puestos lado a lado. El pipeline lo aplica en unos segundos.`
-          : 'La máquina quedó con un solo puesto.',
-      )
-      cargarCamara()
-    } catch (err) {
-      setAviso(err.message)
-    }
-  }
-
   async function quitar() {
     await visionApi.quitarZona(camaraId, objetivo)
     cancelar()
@@ -638,23 +580,6 @@ export default function CamaraVista() {
                         <p className="text-xs text-slate-500">
                           {m.roi ? (estado ? textoEstadoVivo(estado) : 'Sin dato en vivo') : 'Sin zona dibujada'}
                         </p>
-                        {m.puestos?.length > 1 && (
-                          <p className="text-xs text-slate-500 flex flex-wrap gap-x-2">
-                            {m.puestos.map((nombre, i) => {
-                              const ocupado = estado?.puestos?.[i]?.ocupado
-                              return (
-                                <span key={nombre} className={ocupado ? 'text-blue-700 font-medium' : ''}>
-                                  {ocupado ? '●' : '○'} {nombre}
-                                </span>
-                              )
-                            })}
-                            {estado?.puestos && (
-                              <span className="text-slate-400">
-                                ({estado.puestos.filter((p) => p.ocupado).length} de {m.puestos.length} en uso)
-                              </span>
-                            )}
-                          </p>
-                        )}
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         <button
@@ -668,24 +593,6 @@ export default function CamaraVista() {
                         <Link to={`/uso/${m.equipo_id}`} className="text-xs text-slate-500 hover:underline">
                           Historial
                         </Link>
-                        {m.roi && (
-                          <label className="text-xs text-slate-500 flex items-center gap-1">
-                            Puestos
-                            <select
-                              value={m.puestos?.length || 1}
-                              disabled={enEdicion}
-                              onChange={(e) => cambiarPuestos(m.equipo_id, Number(e.target.value))}
-                              className="rounded border border-slate-300 px-1 py-0.5 text-xs"
-                              aria-label={`Puestos de ${m.nombre}`}
-                            >
-                              {[1, 2, 3].map((n) => (
-                                <option key={n} value={n}>
-                                  {n}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        )}
                       </div>
                     </div>
                   </li>

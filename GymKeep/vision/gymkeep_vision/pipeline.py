@@ -25,7 +25,6 @@ import numpy as np
 from gymkeep_vision import rostros, tiempo
 from gymkeep_vision.actividad import MedidorActividad
 from gymkeep_vision.movimiento import DetectorMovimiento
-from gymkeep_vision.puestos import estado_puestos
 from gymkeep_vision.captura import LectorVivo
 from gymkeep_vision.config import Config, ConfigMaquina
 from gymkeep_vision.eventos import construir_evento
@@ -488,10 +487,6 @@ class Pipeline:
                     "personas": len(asignadas.get(zona.nombre, [])),
                 }
             )
-            if maquina.puestos and len(maquina.puestos) > 1:
-                maquinas[-1]["puestos"] = estado_puestos(
-                    maquina.puestos, zona.poligono, asignadas.get(zona.nombre, []), self._activa
-                )
         return {
             "timestamp": self._timestamp(t),
             "ancho": ancho,
