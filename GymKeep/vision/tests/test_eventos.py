@@ -177,3 +177,29 @@ def test_clave_del_pipeline_viaja_en_todas_las_llamadas(monkeypatch):
     cliente.put("/api/v1/vision/camaras/3/cuadro", content=b"x")
     cliente.post("/api/v1/eventos-ia/", json={})
     assert vistas == ["secreta"] * 4
+
+
+
+def test_resolver_ids_pagina_los_listados_de_la_api():
+    from gymkeep_vision.config import Config, ConfigCamara, ConfigMaquina
+    from gymkeep_vision.eventos import POR_PAGINA, resolver_ids
+
+    equipos = [{"id": i, "codigo_activo": f"EQ-{i}", "sucursal_id": 1} for i in range(1, 702)]
+    saltos = []
+
+    def responder(request):
+        params = request.url.params
+        assert int(params["limit"]) <= POR_PAGINA
+        if request.url.path.endswith("/equipamiento/"):
+            skip, limit = int(params["skip"]), int(params["limit"])
+            saltos.append(skip)
+            return httpx.Response(200, json=equipos[skip : skip + limit])
+        return httpx.Response(200, json=[])
+
+    cfg = Config(
+        camara=ConfigCamara(codigo="CAM-X", id=1, sucursal_id=1, empresa_id=1),
+        maquinas=[ConfigMaquina(nombre="M", codigo_activo="EQ-701", roi=[[0, 0], [1, 0], [1, 1]])],
+    )
+    resolver_ids(httpx.Client(base_url="http://api", transport=httpx.MockTransport(responder)), cfg)
+    assert cfg.maquinas[0].equipo_id == 701
+    assert saltos == [0, 500]

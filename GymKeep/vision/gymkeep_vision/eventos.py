@@ -302,6 +302,9 @@ class DestinoAPI:
             log.info("%d eventos pendientes de una corrida anterior: se reintentan", len(self._atrasados))
 
 
+POR_PAGINA = 500  # tope de `limit` en los listados de la API
+
+
 def _buscar(items: list[dict], **filtro) -> dict | None:
     return next((i for i in items if all(i.get(k) == v for k, v in filtro.items())), None)
 
@@ -313,9 +316,15 @@ def resolver_ids(cliente: httpx.Client, cfg: Config, *, registrar: bool = False)
     cam = cfg.camara
 
     def get(ruta: str, **params) -> list[dict]:
-        respuesta = cliente.get(ruta, params={"limit": 1000, **params})
-        respuesta.raise_for_status()
-        return respuesta.json()
+        # Los listados de la API entregan a lo mas POR_PAGINA filas por llamada: se pagina.
+        items: list[dict] = []
+        while True:
+            respuesta = cliente.get(ruta, params={"limit": POR_PAGINA, "skip": len(items), **params})
+            respuesta.raise_for_status()
+            pagina = respuesta.json()
+            items += pagina
+            if len(pagina) < POR_PAGINA:
+                return items
 
     if cam.sucursal_id is None:
         sucursal = _buscar(get("/api/v1/sucursales/"), codigo=cam.sucursal_codigo)
