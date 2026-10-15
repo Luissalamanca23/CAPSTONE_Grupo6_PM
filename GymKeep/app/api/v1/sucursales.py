@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -12,7 +12,7 @@ router = APIRouter()
 
 @router.get("/", response_model=list[SucursalOut])
 def listar_sucursales(
-    empresa_id: Optional[int] = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
+    empresa_id: Optional[int] = None, skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db)
 ):
     """Lista las sucursales (sedes) de una empresa. El equipamiento y las camaras se
     registran siempre dentro de una sucursal."""

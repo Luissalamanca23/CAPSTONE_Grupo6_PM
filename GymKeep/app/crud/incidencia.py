@@ -140,6 +140,27 @@ def create_incidencia(db: Session, incidencia_in: IncidenciaCreate, tipo_falla: 
     )
 
 
+# Reportes QR "no funcional" abiertos, dentro de la ventana, que se exigen para dejar un
+# equipo fuera de servicio (ver create_incidencia_por_qr).
+MIN_REPORTES_FUERA_DE_SERVICIO = 2
+VENTANA_REPORTES_FUERA_DE_SERVICIO = timedelta(hours=24)
+
+
+def _contar_reportes_no_funcional_recientes(db: Session, equipo_id: int) -> int:
+    desde = datetime.now(timezone.utc) - VENTANA_REPORTES_FUERA_DE_SERVICIO
+    return (
+        db.query(Incidencia)
+        .filter(
+            Incidencia.equipo_id == equipo_id,
+            Incidencia.origen == OrigenIncidencia.qr,
+            Incidencia.prioridad == PrioridadIncidencia.urgente,
+            Incidencia.estado.in_([EstadoIncidencia.pendiente, EstadoIncidencia.en_proceso]),
+            Incidencia.fecha_reporte >= desde,
+        )
+        .count()
+    )
+
+
 def create_incidencia_por_qr(
     db: Session,
     equipo: Equipo,
@@ -154,8 +175,14 @@ def create_incidencia_por_qr(
     La prioridad NO sale de tipo_falla.prioridad_base aqui (esa queda para incidencias
     creadas por IA/tecnico) -- para el reporte publico la decide quien reporta:
     leve -> baja, grave -> alta, y si marca que el equipo ya no funciona, urgente siempre
-    (pisando la gravedad elegida) y el equipo pasa a 'fuera_de_servicio' de inmediato, sin
-    esperar a que un tecnico lo revise.
+    (pisando la gravedad elegida).
+
+    Regla para marcar el equipo 'fuera_de_servicio': un unico reporte anonimo NO basta,
+    porque cualquiera con acceso al QR podria sacar una maquina de servicio. El equipo
+    pasa a 'fuera_de_servicio' recien cuando hay al menos 2 reportes QR "no funcional"
+    (los que quedan con prioridad urgente) abiertos (pendiente o en_proceso) del mismo
+    equipo dentro de las ultimas 24 horas, contando el reporte actual. Mientras tanto la
+    incidencia urgente queda visible en el panel para que un tecnico la revise.
     """
     if not funcional:
         prioridad = PrioridadIncidencia.urgente
@@ -176,10 +203,11 @@ def create_incidencia_por_qr(
         qr_id=qr_activo.id if qr_activo else None,
     )
 
-    if not funcional and equipo.estado != EstadoEquipo.fuera_de_servicio:
-        equipo.estado = EstadoEquipo.fuera_de_servicio
-        db.commit()
-        db.refresh(incidencia)
+    if not funcional and equipo.estado == EstadoEquipo.operativo:
+        if _contar_reportes_no_funcional_recientes(db, equipo.id) >= MIN_REPORTES_FUERA_DE_SERVICIO:
+            equipo.estado = EstadoEquipo.fuera_de_servicio
+            db.commit()
+            db.refresh(incidencia)
 
     return incidencia
 

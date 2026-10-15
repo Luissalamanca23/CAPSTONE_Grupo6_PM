@@ -1,7 +1,10 @@
+import threading
+import time
+from collections import defaultdict, deque
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -18,6 +21,39 @@ from app.schemas.incidencia import (
 )
 
 router = APIRouter()
+
+
+class LimitadorVentana:
+    """Limitador simple en memoria (ventana deslizante): permite `maximo` eventos por
+    `ventana` segundos para cada clave. Es por proceso: sirve contra abuso casual del
+    formulario publico; si la API corre en varios procesos, cada uno cuenta aparte."""
+
+    def __init__(self, maximo: int, ventana: float):
+        self.maximo = maximo
+        self.ventana = ventana
+        self._eventos: dict = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def permitir(self, clave) -> bool:
+        ahora = time.monotonic()
+        with self._lock:
+            cola = self._eventos[clave]
+            while cola and ahora - cola[0] > self.ventana:
+                cola.popleft()
+            if len(cola) >= self.maximo:
+                return False
+            cola.append(ahora)
+            return True
+
+    def reiniciar(self) -> None:
+        with self._lock:
+            self._eventos.clear()
+
+
+VENTANA_REPORTE_QR_SEG = 10 * 60
+# 5 reportes por token QR + IP, y un tope mayor por IP para que nadie recorra muchos QR.
+limitador_qr_token = LimitadorVentana(maximo=5, ventana=VENTANA_REPORTE_QR_SEG)
+limitador_qr_ip = LimitadorVentana(maximo=30, ventana=VENTANA_REPORTE_QR_SEG)
 
 
 @router.get("/tipos-falla", response_model=list[TipoFallaOut])
@@ -44,11 +80,22 @@ def crear_incidencia(incidencia_in: IncidenciaCreate, db: Session = Depends(get_
 
 
 @router.post("/reporte-qr", response_model=IncidenciaOut, status_code=status.HTTP_201_CREATED)
-def crear_incidencia_por_qr(incidencia_in: IncidenciaCreateByQR, db: Session = Depends(get_db)):
+def crear_incidencia_por_qr(request: Request, incidencia_in: IncidenciaCreateByQR, db: Session = Depends(get_db)):
     """Portal de Reporte Express: el socio/personal escanea el QR de la maquina, elige el
     tipo de falla en la encuesta y escribe su nombre (unico campo de texto libre). La fecha
     y hora quedan registradas automaticamente y la prioridad se calcula sola segun la
-    prioridad_base del tipo de falla."""
+    prioridad_base del tipo de falla.
+
+    Proteccion del endpoint publico: maximo 5 reportes cada 10 minutos por token QR + IP
+    (y 30 por IP); al pasarse responde 429. Un equipo solo queda 'fuera_de_servicio' con 2
+    reportes "no funcional" abiertos en 24 h (ver crud.incidencia.create_incidencia_por_qr)."""
+    ip = request.client.host if request.client else "desconocida"
+    if not limitador_qr_ip.permitir(ip) or not limitador_qr_token.permitir((incidencia_in.token, ip)):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Se enviaron demasiados reportes en poco tiempo. Intenta de nuevo en unos minutos.",
+        )
+
     equipo = crud_equipamiento.get_equipo_by_token(db, incidencia_in.token)
     if not equipo:
         raise HTTPException(status_code=404, detail="El codigo QR no es valido o ya no esta activo.")
@@ -73,8 +120,8 @@ def crear_incidencia_por_qr(incidencia_in: IncidenciaCreateByQR, db: Session = D
 @router.get("/", response_model=list[IncidenciaOut])
 def listar_incidencias(
     response: Response,
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
     estado: Optional[EstadoIncidencia] = None,
     equipo_id: Optional[int] = None,
     categoria: Optional[str] = None,
