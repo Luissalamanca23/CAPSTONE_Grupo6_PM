@@ -17,6 +17,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY gymkeep_vision ./gymkeep_vision
 # Modelo por defecto (yolo26n) dentro de la imagen: no hay que descargarlo aparte.
 RUN python -c "from gymkeep_vision.config import ConfigModelo; from ultralytics import YOLO; YOLO(ConfigModelo().ruta_pesos())"
+# Detector de rostros (YuNet) para la privacidad de la imagen.
+RUN python -c "from gymkeep_vision import rostros; rostros.descargar()"
 
 ENV PYTHONUNBUFFERED=1
 ENTRYPOINT ["python", "-m", "gymkeep_vision"]

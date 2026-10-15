@@ -12,7 +12,7 @@ guardado en MongoDB.
 | Pipeline en vivo: lee las zonas de la plataforma, envía su estado cada 1 s y la imagen cada 2 s, y aplica cambios de zonas sin reiniciarse | `vision/` (con tests) |
 | Registro en vivo en MongoDB: `camaras_vivo`, `detecciones_raw`, `telemetria_camaras`, `fotos_equipos` | Base `gymkeep_ai` |
 | Pipeline en Docker (CPU, sin GPU) | `docker-compose.vision.yml` |
-| Pantallas del panel web | Diseño en la sección 7 |
+| Pantallas del panel web: "Uso de máquinas" y "Cámaras" | `frontend/src/pages/vision/` y `frontend/src/api/vision.js` (sección 7) |
 
 ## 2. Flujo
 
@@ -135,11 +135,13 @@ VISION_CAMARA=CAM-01 VISION_FUENTE=rtsp://usuario:clave@ip/stream \
 - El envío en vivo corre en un hilo aparte: si la API se cae, el análisis sigue y se reintenta.
 - `docker stop` (o Ctrl+C) cierra las sesiones abiertas antes de salir.
 - La imagen que se envía va sin anotaciones (el panel dibuja las suyas) y con las cabezas
-  difuminadas.
+  y los rostros difuminados (ver la sección 10, punto 1).
 
 ## 7. Pantallas del panel web
 
-Propuesta: dos secciones nuevas en el menú, "Uso de máquinas" y "Cámaras".
+Dos secciones en el menú, "Uso de máquinas" (`/uso`, `/uso/:id`) y "Cámaras" (`/camaras`,
+`/camaras/:id`), implementadas en `frontend/src/pages/vision/`. Las llamadas a la API están en
+`frontend/src/api/vision.js`.
 
 ### 7.1 Uso de máquinas: `GET /vision/maquinas`
 
@@ -196,13 +198,14 @@ Propuesta: dos secciones nuevas en el menú, "Uso de máquinas" y "Cámaras".
 - "Subir imagen de referencia" (`PUT .../cuadro`) y el comando para iniciar el pipeline cuando la
   cámara no tiene señal.
 
-Colores sugeridos (los mismos del video anotado del pipeline): verde = libre, ámbar = detectando,
+Colores (los mismos del video anotado del pipeline): verde = libre, ámbar = detectando,
 azul = sesión abierta (en uso o en pausa).
 
 ## 8. Cómo probar
 
 ```bash
 cd GymKeep && docker compose up -d db mongo api
+# Panel web: cd frontend && npm install && npm run dev, y abrir "Uso de máquinas" o "Cámaras"
 # 1) Crear una cámara (o usar CAM-01 de seed.sql)
 curl -X POST localhost:8000/api/v1/camaras/ -H 'Content-Type: application/json' \
   -d '{"codigo": "CAM-02", "nombre": "Camara de prueba", "sucursal_id": 1}'
@@ -232,10 +235,14 @@ curl -X PUT localhost:8000/api/v1/vision/camaras/2/maquinas/1 -H 'Content-Type: 
 
 ## 10. Pendientes y decisiones abiertas
 
-1. **Privacidad.** Hoy se difumina la cabeza de cada persona que YOLO detecta. Si alguien está
-   muy cerca de la cámara o cortado por el borde puede no detectarse, y su cara queda visible en la
-   imagen del panel. Antes de mostrar cámaras reales, agregar un detector de rostros (por ejemplo
-   YuNet de OpenCV) sobre el cuadro que se envía, o bajar la resolución de esa imagen.
+1. **Privacidad.** Se difumina la cabeza de cada persona que YOLO detecta y, además, cada rostro
+   que encuentra un detector de rostros (YuNet de OpenCV, `gymkeep_vision/rostros.py`) en todo
+   el cuadro, para cubrir a quien está muy cerca de la cámara o cortado por el borde. Se aplica
+   al video anotado, a las evidencias y a la imagen del panel. El modelo (~230 KB) se descarga en
+   `vision/modelos/` la primera vez y viene incluido en la imagen Docker; si no se puede cargar,
+   el pipeline sigue solo con el difuminado de cabezas y lo avisa en el log. Costo medido en CPU:
+   ~13 ms por cuadro 1080p y ~4 ms en 352x240. En cámaras de baja resolución las caras son muy
+   chicas para el detector y la protección depende del difuminado de cabezas.
 2. **Autenticación.** Como el resto de la API, estos endpoints no tienen login. La edición de
    zonas y parámetros debería quedar solo para administradores.
 3. **Volumen en Mongo.** Cada cámara reescribe una imagen de 50–150 KB cada 2 s (no crece) y suma

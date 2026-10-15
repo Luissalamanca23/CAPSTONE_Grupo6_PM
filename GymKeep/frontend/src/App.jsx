@@ -7,6 +7,10 @@ import Equipos from './pages/Equipos.jsx'
 import Incidencias from './pages/Incidencias.jsx'
 import Reportar from './pages/Reportar.jsx'
 import Sucursales from './pages/Sucursales.jsx'
+import CamaraVista from './pages/vision/CamaraVista.jsx'
+import Camaras from './pages/vision/Camaras.jsx'
+import UsoMaquinaDetalle from './pages/vision/UsoMaquinaDetalle.jsx'
+import UsoMaquinas from './pages/vision/UsoMaquinas.jsx'
 
 export default function App() {
   return (
@@ -22,6 +26,11 @@ export default function App() {
         <Route path="/incidencias" element={<Incidencias />} />
         <Route path="/costos" element={<Costos />} />
         <Route path="/sucursales" element={<Sucursales />} />
+        {/* Modulo de vision (ver vision/INTEGRACION.md) */}
+        <Route path="/uso" element={<UsoMaquinas />} />
+        <Route path="/uso/:id" element={<UsoMaquinaDetalle />} />
+        <Route path="/camaras" element={<Camaras />} />
+        <Route path="/camaras/:id" element={<CamaraVista />} />
       </Route>
     </Routes>
   )
