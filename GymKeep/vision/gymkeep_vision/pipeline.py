@@ -22,7 +22,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from gymkeep_vision import tiempo
+from gymkeep_vision import rostros, tiempo
 from gymkeep_vision.config import Config, ConfigMaquina
 from gymkeep_vision.eventos import construir_evento
 from gymkeep_vision.sesiones import Estado, MonitorMaquina, Observacion
@@ -88,6 +88,8 @@ class Pipeline:
         self.cfg = cfg
         # Conexion en vivo con la plataforma (vivo.PublicadorVivo), opcional.
         self.publicador = publicador
+        # Rostros que YOLO no detecta como persona (muy cerca o cortados por el borde).
+        self.detector_rostros = rostros.crear() if cfg.difuminar_personas else None
         # Un archivo se analiza al ritmo del reloj (como una camara en vivo) y, con repetir,
         # vuelve a empezar al terminar: sirve para mostrar la integracion sin camara real.
         self.tiempo_real = tiempo_real
@@ -237,7 +239,8 @@ class Pipeline:
                     )
                 # Se dibuja despues de actualizar, para que la evidencia de un inicio_uso ya
                 # muestre la maquina EN USO.
-                anotado = self._anotar(cuadro, detecciones, asignadas, t)
+                caras = self.detector_rostros.detectar(cuadro) if self.detector_rostros and self.cfg.difuminar_personas else []
+                anotado = self._anotar(cuadro, detecciones, asignadas, t, caras)
                 for ev, nombre, dets in pendientes:
                     self._emitir(ev, nombre, dets, anotado, resultado)
 
@@ -246,7 +249,7 @@ class Pipeline:
                         escritor.write(anotado)
                         escritos += 1
                 if self.publicador is not None:
-                    jpeg = self._cuadro_para_panel(cuadro, detecciones) if self.publicador.necesita_cuadro() else None
+                    jpeg = self._cuadro_para_panel(cuadro, detecciones, caras) if self.publicador.necesita_cuadro() else None
                     fps_analisis = resultado.cuadros_analizados / max(1e-6, time.monotonic() - t0_reloj)
                     self.publicador.publicar(self._estado_vivo(t, detecciones, asignadas, latencia, fps_analisis), jpeg)
                     nueva = self.publicador.tomar_config_nueva()
@@ -406,12 +409,12 @@ class Pipeline:
             "personas": personas,
         }
 
-    def _cuadro_para_panel(self, cuadro: np.ndarray, detecciones) -> bytes:
-        """Cuadro limpio (sin anotaciones: el panel dibuja las suyas) con las cabezas
-        difuminadas y a lo mas 1280 px de ancho."""
+    def _cuadro_para_panel(self, cuadro: np.ndarray, detecciones, caras=()) -> bytes:
+        """Cuadro limpio (sin anotaciones: el panel dibuja las suyas) con cabezas y rostros
+        difuminados y a lo mas 1280 px de ancho."""
         img = cuadro.copy()
         if self.cfg.difuminar_personas:
-            _difuminar_cabezas(img, detecciones)
+            _difuminar_cabezas(img, detecciones, caras=caras)
         alto, ancho = img.shape[:2]
         if ancho > 1280:
             img = cv2.resize(img, (1280, round(alto * 1280 / ancho)), interpolation=cv2.INTER_AREA)
@@ -453,11 +456,11 @@ class Pipeline:
 
     # ------------------------------------------------------------------ dibujo
 
-    def _anotar(self, cuadro, detecciones, asignadas, t) -> np.ndarray:
+    def _anotar(self, cuadro, detecciones, asignadas, t, caras=()) -> np.ndarray:
         f = self._f
         img = cv2.resize(cuadro, self._tam_dibujo, interpolation=cv2.INTER_LINEAR) if f > 1 else cuadro.copy()
         if self.cfg.difuminar_personas:
-            _difuminar_cabezas(img, detecciones, f)
+            _difuminar_cabezas(img, detecciones, f, caras)
 
         capa = img.copy()
         for zona in self.zonas:
@@ -574,20 +577,25 @@ def _rotulo(nombre: str) -> str:
     return ultima if ultima.isdigit() else nombre
 
 
-def _difuminar_cabezas(img: np.ndarray, detecciones: list[Deteccion], f: float = 1.0) -> None:
+def _difuminar_cabezas(img: np.ndarray, detecciones: list[Deteccion], f: float = 1.0, caras=()) -> None:
     """Privacidad por diseno: el sistema mide uso de maquinas, no identifica personas.
-    Difumina el tercio superior de cada persona en el video y las evidencias."""
+    Difumina el tercio superior de cada persona y cada rostro encontrado por el detector de
+    rostros (cajas x1, y1, x2, y2 en coordenadas del cuadro original), en el video, las
+    evidencias y la imagen del panel."""
     alto, ancho = img.shape[:2]
+    cajas = []
     for det in detecciones:
-        x1, y1, x2, y2 = (v * f for v in det.bbox)
-        cabeza_y2 = y1 + (y2 - y1) * 0.3
-        x1, x2 = max(0, int(x1)), min(ancho, int(x2))
-        y1, cabeza_y2 = max(0, int(y1)), min(alto, int(cabeza_y2))
-        if x2 - x1 < 4 or cabeza_y2 - y1 < 4:
+        x1, y1, x2, y2 = det.bbox
+        cajas.append((x1, y1, x2, y1 + (y2 - y1) * 0.3))
+    cajas += list(caras)
+    for x1, y1, x2, y2 in cajas:
+        x1, x2 = max(0, int(x1 * f)), min(ancho, int(x2 * f))
+        y1, y2 = max(0, int(y1 * f)), min(alto, int(y2 * f))
+        if x2 - x1 < 4 or y2 - y1 < 4:
             continue
-        region = img[y1:cabeza_y2, x1:x2]
+        region = img[y1:y2, x1:x2]
         k = max(9, (min(region.shape[:2]) // 2) | 1)
-        img[y1:cabeza_y2, x1:x2] = cv2.GaussianBlur(region, (k, k), 0)
+        img[y1:y2, x1:x2] = cv2.GaussianBlur(region, (k, k), 0)
 
 
 def _texto(img, texto, org, escala, color, grosor=1) -> None:

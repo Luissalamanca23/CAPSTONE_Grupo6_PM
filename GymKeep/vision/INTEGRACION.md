@@ -135,7 +135,7 @@ VISION_CAMARA=CAM-01 VISION_FUENTE=rtsp://usuario:clave@ip/stream \
 - El envío en vivo corre en un hilo aparte: si la API se cae, el análisis sigue y se reintenta.
 - `docker stop` (o Ctrl+C) cierra las sesiones abiertas antes de salir.
 - La imagen que se envía va sin anotaciones (el panel dibuja las suyas) y con las cabezas
-  difuminadas.
+  y los rostros difuminados (ver la sección 10, punto 1).
 
 ## 7. Pantallas del panel web
 
@@ -235,10 +235,14 @@ curl -X PUT localhost:8000/api/v1/vision/camaras/2/maquinas/1 -H 'Content-Type: 
 
 ## 10. Pendientes y decisiones abiertas
 
-1. **Privacidad.** Hoy se difumina la cabeza de cada persona que YOLO detecta. Si alguien está
-   muy cerca de la cámara o cortado por el borde puede no detectarse, y su cara queda visible en la
-   imagen del panel. Antes de mostrar cámaras reales, agregar un detector de rostros (por ejemplo
-   YuNet de OpenCV) sobre el cuadro que se envía, o bajar la resolución de esa imagen.
+1. **Privacidad.** Se difumina la cabeza de cada persona que YOLO detecta y, además, cada rostro
+   que encuentra un detector de rostros (YuNet de OpenCV, `gymkeep_vision/rostros.py`) en todo
+   el cuadro, para cubrir a quien está muy cerca de la cámara o cortado por el borde. Se aplica
+   al video anotado, a las evidencias y a la imagen del panel. El modelo (~230 KB) se descarga en
+   `vision/modelos/` la primera vez y viene incluido en la imagen Docker; si no se puede cargar,
+   el pipeline sigue solo con el difuminado de cabezas y lo avisa en el log. Costo medido en CPU:
+   ~13 ms por cuadro 1080p y ~4 ms en 352x240. En cámaras de baja resolución las caras son muy
+   chicas para el detector y la protección depende del difuminado de cabezas.
 2. **Autenticación.** Como el resto de la API, estos endpoints no tienen login. La edición de
    zonas y parámetros debería quedar solo para administradores.
 3. **Volumen en Mongo.** Cada cámara reescribe una imagen de 50–150 KB cada 2 s (no crece) y suma

@@ -52,7 +52,7 @@ Deja en `salida/<video>_<fecha>/`:
 | `sesiones.csv` | Una fila por sesión: máquina, inicio, fin, duración, tiempo con alguien encima, pausas, confianza, motivo de cierre |
 | `resumen.json` | Por máquina: sesiones, uso total, % de ocupación; parámetros, rendimiento y de dónde salió la hora de inicio |
 | `linea_de_tiempo.png` | Detecciones crudas vs. sesiones por máquina, con la hora real en el eje |
-| `video_anotado.mp4` | Video con ROI, personas y cabezas difuminadas. Muestra la hora real, la posición en el video y el cronómetro de cada máquina (sesión en curso, o cuánto falta para T_on / T_off). Se reproduce al ritmo del reloj real, aunque el archivo venga acelerado |
+| `video_anotado.mp4` | Video con ROI, personas, cabezas y rostros difuminados. Muestra la hora real, la posición en el video y el cronómetro de cada máquina (sesión en curso, o cuánto falta para T_on / T_off). Se reproduce al ritmo del reloj real, aunque el archivo venga acelerado |
 | `eventos.jsonl` | Los eventos exactamente como se envían a `POST /eventos-ia/` |
 | `presencia.csv` | La señal cruda por máquina y por instante (sirve para `recalibrar`) |
 | `evidencias/` | Un cuadro anotado por cada `inicio_uso` |
@@ -145,7 +145,7 @@ Plantilla comentada: [`config/ejemplo_camara.yaml`](config/ejemplo_camara.yaml).
 | `parametros.criterio_zona` | `pie` (centro inferior de la persona), `centro` o `solape` | `pie` |
 | `escala_tiempo` | Segundos reales por segundo de video (videos de grabador acelerados) | 1,0 |
 | `modelo.pesos`, `modelo.imgsz` | Modelo YOLO y resolución de inferencia | `yolo26n.pt`, 640 |
-| `privacidad.difuminar_personas` | Difumina cabezas en video y evidencias | `true` |
+| `privacidad.difuminar_personas` | Difumina cabezas y rostros (YuNet) en video, evidencias e imagen del panel | `true` |
 
 ## Tests
 
