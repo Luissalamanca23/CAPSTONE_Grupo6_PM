@@ -154,7 +154,6 @@ def maquinas_de_camara(db: Session, camara: Camara, *, solo_con_zona: bool = Fal
                 "estado": equipo.estado.value if hasattr(equipo.estado, "value") else equipo.estado,
                 "roi": roi,
                 "activo": bool(fila.activo),
-                "puestos": (fila.roi or {}).get("puestos") if isinstance(fila.roi, dict) else None,
             }
         )
     return sorted(maquinas, key=lambda m: m["nombre"])
@@ -163,9 +162,6 @@ def maquinas_de_camara(db: Session, camara: Camara, *, solo_con_zona: bool = Fal
 def guardar_roi(db: Session, camara: Camara, equipo: Equipo, puntos: list[tuple[float, float]]) -> dict:
     roi = {"puntos": [list(p) for p in puntos], "normalizado": True}
     existe = _asociaciones(db, camara_id=camara.id, equipo_ids=[equipo.id])
-    previa = existe[0].roi if existe and isinstance(existe[0].roi, dict) else {}
-    if previa.get("puestos"):  # redibujar la zona conserva la division en puestos
-        roi["puestos"] = previa["puestos"]
     if existe:
         db.execute(
             update(camara_equipos)
@@ -176,24 +172,6 @@ def guardar_roi(db: Session, camara: Camara, equipo: Equipo, puntos: list[tuple[
         db.execute(insert(camara_equipos).values(camara_id=camara.id, equipo_id=equipo.id, roi=roi, activo=True))
     db.commit()
     return next(m for m in maquinas_de_camara(db, camara) if m["equipo_id"] == equipo.id)
-
-
-def guardar_puestos(db: Session, camara: Camara, equipo_id: int, nombres: list[str]) -> dict | None:
-    """Divide la zona de la maquina en puestos lado a lado (franjas verticales iguales, de
-    izquierda a derecha). Un solo nombre quita la division. None si la maquina no tiene zona."""
-    existe = _asociaciones(db, camara_id=camara.id, equipo_ids=[equipo_id])
-    if not existe or not isinstance(existe[0].roi, dict) or not existe[0].roi.get("puntos"):
-        return None
-    roi = {k: v for k, v in existe[0].roi.items() if k != "puestos"}
-    if len(nombres) > 1:
-        roi["puestos"] = nombres
-    db.execute(
-        update(camara_equipos)
-        .where(camara_equipos.c.camara_id == camara.id, camara_equipos.c.equipo_id == equipo_id)
-        .values(roi=roi)
-    )
-    db.commit()
-    return next(m for m in maquinas_de_camara(db, camara) if m["equipo_id"] == equipo_id)
 
 
 def quitar_maquina(db: Session, camara: Camara, equipo_id: int) -> bool:
