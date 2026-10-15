@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { visionApi } from '../../api/vision.js'
 import CategoriaEquipoBadge from '../../components/CategoriaEquipoBadge.jsx'
 import StatCard from '../../components/StatCard.jsx'
 import { ESTADOS_VIVO, formatearHoras, haceCuanto, textoEstadoVivo } from './uso.js'
+import usePolling from './usePolling.js'
 
 const ORDENES = {
   horas: { etiqueta: 'Más horas de uso', comparar: (a, b) => b.horas_uso - a.horas_uso },
@@ -114,20 +115,14 @@ export default function UsoMaquinas() {
   const [soloMedidas, setSoloMedidas] = useState(false)
 
   // El estado "en uso ahora" cambia segundo a segundo: se refresca solo.
-  useEffect(() => {
-    let vigente = true
-    const cargar = () =>
+  usePolling(
+    (vigente) =>
       visionApi
         .listarMaquinas()
-        .then((datos) => vigente && (setMaquinas(datos), setError(null)))
-        .catch((err) => vigente && setError(err.message))
-    cargar()
-    const temporizador = setInterval(cargar, 5000)
-    return () => {
-      vigente = false
-      clearInterval(temporizador)
-    }
-  }, [])
+        .then((datos) => vigente() && (setMaquinas(datos), setError(null)))
+        .catch((err) => vigente() && setError(err.message)),
+    5000,
+  )
 
   const visibles = useMemo(() => {
     if (!maquinas) return []

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../../api/client.js'
 import { visionApi } from '../../api/vision.js'
 import { haceCuanto } from './uso.js'
+import usePolling from './usePolling.js'
 
 export function ChipSenal({ camara }) {
   if (camara.en_linea) {
@@ -25,16 +26,27 @@ export function ChipSenal({ camara }) {
 }
 
 function TarjetaCamara({ camara, marca }) {
+  // Solo las camaras con senal refrescan su imagen; sin senal se deja la ultima ya cargada.
+  const [marcaImagen, setMarcaImagen] = useState(marca)
+  const [falloImagen, setFalloImagen] = useState(false)
+  useEffect(() => {
+    if (camara.en_linea) {
+      setMarcaImagen(marca)
+      setFalloImagen(false)
+    }
+  }, [marca, camara.en_linea])
+
   return (
     <Link
       to={`/camaras/${camara.id}`}
       className="group bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden hover:border-emerald-400 hover:shadow transition"
     >
       <div className="relative bg-slate-900 aspect-video">
-        {camara.tiene_cuadro ? (
+        {camara.tiene_cuadro && !falloImagen ? (
           <img
-            src={visionApi.urlCuadro(camara.id, marca)}
+            src={visionApi.urlCuadro(camara.id, marcaImagen)}
             alt={`Imagen de ${camara.nombre}`}
+            onError={() => setFalloImagen(true)}
             className="w-full h-full object-cover"
           />
         ) : (
@@ -59,15 +71,23 @@ function FormularioCamara({ onCreada }) {
   const [zonas, setZonas] = useState([])
   const [datos, setDatos] = useState({ codigo: '', nombre: '', sucursal_id: '', zona_id: '', rtsp_url: '' })
   const [error, setError] = useState(null)
+  const [errorCarga, setErrorCarga] = useState(null)
 
   useEffect(() => {
-    api.listarSucursales().then((lista) => {
-      setSucursales(lista)
-      if (lista.length === 1) setDatos((d) => ({ ...d, sucursal_id: String(lista[0].id) }))
-    })
+    api
+      .listarSucursales()
+      .then((lista) => {
+        setSucursales(lista)
+        if (lista.length === 1) setDatos((d) => ({ ...d, sucursal_id: String(lista[0].id) }))
+      })
+      .catch((err) => setErrorCarga(`No se pudieron cargar las sucursales: ${err.message}`))
   }, [])
   useEffect(() => {
-    if (datos.sucursal_id) api.listarZonas(datos.sucursal_id).then(setZonas)
+    if (!datos.sucursal_id) return
+    api
+      .listarZonas(datos.sucursal_id)
+      .then((lista) => (setZonas(lista), setErrorCarga(null)))
+      .catch((err) => setErrorCarga(`No se pudieron cargar las zonas: ${err.message}`))
   }, [datos.sucursal_id])
 
   const campo = (clave) => ({ value: datos[clave], onChange: (e) => setDatos({ ...datos, [clave]: e.target.value }) })
@@ -130,7 +150,7 @@ function FormularioCamara({ onCreada }) {
         <button type="submit" className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
           Guardar cámara
         </button>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {(error || errorCarga) && <p className="text-sm text-red-600">{error || errorCarga}</p>}
       </div>
     </form>
   )
@@ -142,18 +162,13 @@ export default function Camaras() {
   const [creando, setCreando] = useState(false)
   const [marca, setMarca] = useState(Date.now())
 
-  function cargar() {
-    return visionApi
+  const cargar = (vigente = () => true) =>
+    visionApi
       .listarCamaras()
-      .then((lista) => (setCamaras(lista), setMarca(Date.now()), setError(null)))
-      .catch((err) => setError(err.message))
-  }
+      .then((lista) => vigente() && (setCamaras(lista), setMarca(Date.now()), setError(null)))
+      .catch((err) => vigente() && setError(err.message))
 
-  useEffect(() => {
-    cargar()
-    const temporizador = setInterval(cargar, 5000)
-    return () => clearInterval(temporizador)
-  }, [])
+  usePolling(cargar, 5000)
 
   return (
     <div className="space-y-6">
