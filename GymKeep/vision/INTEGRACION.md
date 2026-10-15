@@ -165,6 +165,8 @@ VISION_CAMARA=CAM-01 VISION_FUENTE=rtsp://IP_DE_LA_CAMARA/RUTA \
   sesión que termina porque la persona se quedó quieta más que T_off se cierra con `cierre =
   "inactividad"`. Ver `vision/README.md`.
 - `VISION_HILOS`: con varias cámaras en el mismo equipo, limita los hilos de cada pipeline.
+- `--perfil rpi` (Raspberry Pi 5 o notebook sin GPU): 2,5 análisis/s, YOLO solo con movimiento
+  cerca de las máquinas y modelo NCNN; mediciones en `vision/README.md`.
 - Si el panel entrega parámetros incoherentes (por ejemplo `t_off_s` no mayor que `gracia_s`),
   el pipeline lo registra como aviso, aplica las zonas y conserva los parámetros anteriores.
 - `docker stop` (o Ctrl+C) cierra las sesiones abiertas antes de salir.
