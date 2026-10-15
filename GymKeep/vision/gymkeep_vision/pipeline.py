@@ -23,6 +23,7 @@ import cv2
 import numpy as np
 
 from gymkeep_vision import rostros, tiempo
+from gymkeep_vision.actividad import MedidorActividad
 from gymkeep_vision.captura import LectorVivo
 from gymkeep_vision.config import Config, ConfigMaquina
 from gymkeep_vision.eventos import construir_evento
@@ -42,12 +43,14 @@ COLORES = {
     Estado.CANDIDATA: (40, 190, 240),
     Estado.EN_USO: (60, 60, 230),
     Estado.PAUSA: (40, 140, 250),
+    Estado.OCUPADA: (170, 120, 150),
 }
 ETIQUETAS = {
     Estado.LIBRE: "LIBRE",
     Estado.CANDIDATA: "DETECTANDO",
     Estado.EN_USO: "EN USO",
     Estado.PAUSA: "PAUSA",
+    Estado.OCUPADA: "OCUPADA SIN USO",
 }
 
 
@@ -92,6 +95,9 @@ class Pipeline:
         repetir: bool = False,
     ):
         self.cfg = cfg
+        # Actividad por pose (actividad.py): solo si la config la pide.
+        self.medidor = MedidorActividad(cfg.actividad) if cfg.actividad else None
+        self._activa: dict = {}
         # Conexion en vivo con la plataforma (vivo.PublicadorVivo), opcional.
         self.publicador = publicador
         # Rostros que YOLO no detecta como persona (muy cerca o cortados por el borde).
@@ -229,6 +235,7 @@ class Pipeline:
 
                 inicio_computo = time.perf_counter()
                 detecciones = self._detectar(modelo, cuadro)
+                activa = self._activa = self.medidor.actualizar(t, detecciones) if self.medidor else {}
                 # Se asignan todas las detecciones y despues se filtra por confianza_min: asi
                 # presencia.csv guarda la confianza aunque no llegue al umbral, y el comando
                 # `recalibrar` puede probar otros umbrales sin volver a correr YOLO.
@@ -249,6 +256,7 @@ class Pipeline:
                         personas=len(dets),
                         confianza=max((d.confianza for d in dets), default=None),
                         track_ids=tuple(d.track_id for d in dets if d.track_id is not None),
+                        activas=self._contar_activas(dets, activa),
                     )
                     monitor = self.monitores[zona.nombre]
                     pendientes += [(ev, zona.nombre, dets) for ev in monitor.actualizar(obs)]
@@ -367,10 +375,23 @@ class Pipeline:
         if cajas is None or len(cajas) == 0:
             return []
         ids = cajas.id.int().tolist() if cajas.id is not None else [None] * len(cajas)
+        puntos = res.keypoints.data.tolist() if getattr(res, "keypoints", None) is not None else [None] * len(cajas)
         return [
-            Deteccion(bbox=tuple(float(v) for v in xyxy), confianza=float(conf), track_id=tid)
-            for xyxy, conf, tid in zip(cajas.xyxy.tolist(), cajas.conf.tolist(), ids)
+            Deteccion(
+                bbox=tuple(float(v) for v in xyxy),
+                confianza=float(conf),
+                track_id=tid,
+                puntos=tuple(map(tuple, kp)) if kp is not None else None,
+            )
+            for xyxy, conf, tid, kp in zip(cajas.xyxy.tolist(), cajas.conf.tolist(), ids, puntos)
         ]
+
+    def _contar_activas(self, dets: list[Deteccion], activa: dict) -> int | None:
+        """Personas activas en una zona, o None si no se mide la actividad. Una persona de
+        actividad desconocida (recien aparecida, sin puntos) cuenta como activa."""
+        if self.medidor is None:
+            return None
+        return sum(1 for d in dets if activa.get(id(d)) is not False)
 
     def _timestamp(self, t: float) -> str:
         """Hora real del instante `t` para registrar (ISO 8601 con milisegundos)."""
@@ -429,6 +450,10 @@ class Pipeline:
             for d in detecciones
             if d.confianza >= self.cfg.confianza_min
         ]
+        if self.medidor is not None:  # solo si se mide: si no, el formato queda como siempre
+            activa = {id(d): self._activa.get(id(d)) for d in detecciones}
+            for persona, d in zip(personas, [d for d in detecciones if d.confianza >= self.cfg.confianza_min]):
+                persona["activa"] = activa[id(d)]
         maquinas = []
         for zona in self.zonas:
             maquina, monitor = self.maquinas[zona.nombre], self.monitores[zona.nombre]

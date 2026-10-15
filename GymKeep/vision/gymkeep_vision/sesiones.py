@@ -32,6 +32,9 @@ class Estado(str, Enum):
     CANDIDATA = "candidata"  # hay alguien, pero todavia no cumple t_on_s
     EN_USO = "en_uso"
     PAUSA = "pausa"  # sesion abierta, nadie encima ahora (ej. descanso entre series)
+    # Hay alguien encima pero quieto (sentado sin entrenar): no es uso. Solo existe si se
+    # mide la actividad (modelo de pose, ver actividad.py); para las reglas equivale a LIBRE.
+    OCUPADA = "ocupada"
 
 
 @dataclass(frozen=True)
@@ -68,6 +71,15 @@ class Observacion:
     personas: int
     confianza: float | None = None  # la mayor confianza entre las personas presentes
     track_ids: tuple[int, ...] = ()
+    # Cuantas de esas personas se mueven como quien hace un ejercicio (actividad.py). None =
+    # no se mide: toda presencia cuenta como uso, como antes. Con 0, la presencia cuenta como
+    # ausencia para T_on y T_off: quien se sienta en la maquina sin usarla no abre ni sostiene
+    # una sesion (el descanso entre series sigue cubierto por T_off).
+    activas: int | None = None
+
+    @property
+    def usando(self) -> bool:
+        return self.personas > 0 and (self.activas is None or self.activas > 0)
 
 
 @dataclass
@@ -84,7 +96,8 @@ class Sesion:
     personas_max: int = 0
     track_ids: set[int] = field(default_factory=set)
     eventos: int = 0
-    cierre: str | None = None  # 'ausencia' | 'fin_de_video' | 'interrumpido' | 't_max' | 'sin_senal'
+    # 'ausencia' | 'inactividad' | 'fin_de_video' | 'interrumpido' | 't_max' | 'sin_senal'
+    cierre: str | None = None
 
     @property
     def abierta(self) -> bool:
@@ -159,7 +172,15 @@ class MonitorMaquina:
         return cierre + self._avanzar(obs)
 
     def _avanzar(self, obs: Observacion) -> list[EventoUso]:
-        presente = obs.personas > 0
+        if self.estado == Estado.OCUPADA:
+            self.estado = Estado.LIBRE
+        eventos = self._reglas(obs)
+        if self.estado == Estado.LIBRE and obs.personas > 0 and not obs.usando:
+            self.estado = Estado.OCUPADA
+        return eventos
+
+    def _reglas(self, obs: Observacion) -> list[EventoUso]:
+        presente = obs.usando
         dt = 0.0 if self._t_prev is None else obs.t - self._t_prev
         continua = presente and self._presente_prev and dt <= self.p.dt_max_s
         self._t_prev = obs.t
@@ -208,7 +229,8 @@ class MonitorMaquina:
 
         ausencia = obs.t - sesion.ultima_presencia
         if ausencia >= self.p.t_off_s:
-            return [self._cerrar(obs.t, "ausencia")]
+            # Si sigue habiendo alguien encima, la sesion termino por quedarse quieto.
+            return [self._cerrar(obs.t, "inactividad" if obs.personas > 0 else "ausencia")]
         if ausencia > self.p.gracia_s:
             self.estado = Estado.PAUSA
         return []

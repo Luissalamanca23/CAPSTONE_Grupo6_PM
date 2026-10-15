@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from gymkeep_vision.actividad import ParametrosActividad
 from gymkeep_vision.sesiones import ParametrosUso
 
 RAIZ = Path(__file__).resolve().parents[1]  # GymKeep/vision/
@@ -75,7 +76,23 @@ class Config:
     # (hora final - hora inicial) / duracion del archivo.
     escala_tiempo: float = 1.0
     difuminar_personas: bool = True  # privacidad: difumina cabezas en video y evidencias
+    # Medir actividad con un modelo de pose (actividad.py): distingue usar la maquina de solo
+    # estar encima. None = no se mide (toda presencia cuenta como uso).
+    actividad: ParametrosActividad | None = None
     ruta: Path | None = None
+
+    def con_actividad(self, parametros: ParametrosActividad | None = None) -> "Config":
+        """Copia que mide actividad: usa el modelo de pose equivalente al configurado
+        (yolo26n.pt -> yolo26n-pose.pt; la pose tambien detecta personas, con costo similar)."""
+        pesos = self.modelo.pesos
+        if "-pose" not in Path(pesos).stem:
+            ruta = Path(pesos)
+            pesos = str(ruta.with_name(f"{ruta.stem}-pose{ruta.suffix}"))
+        return replace(
+            self,
+            modelo=replace(self.modelo, pesos=pesos),
+            actividad=parametros or self.actividad or ParametrosActividad(),
+        )
 
     def con_parametros(self, **cambios) -> "Config":
         """Copia con parametros de uso cambiados (ej. desde la linea de comandos)."""
@@ -118,7 +135,7 @@ def cargar(ruta: str | Path) -> Config:
         raise ValueError(f"{ruta}: hay nombres de maquina repetidos")
 
     resolucion = datos.get("resolucion_referencia")
-    return Config(
+    cfg = Config(
         camara=ConfigCamara(**datos["camara"]),
         maquinas=maquinas,
         modelo=ConfigModelo(**datos.get("modelo", {})),
@@ -132,6 +149,11 @@ def cargar(ruta: str | Path) -> Config:
         difuminar_personas=datos.get("privacidad", {}).get("difuminar_personas", True),
         ruta=ruta,
     )
+    actividad = datos.get("actividad") or {}
+    if actividad.get("habilitada"):
+        campos = ParametrosActividad.__dataclass_fields__
+        cfg = cfg.con_actividad(ParametrosActividad(**{k: v for k, v in actividad.items() if k in campos}))
+    return cfg
 
 
 def desde_api(datos: dict, base: Config | None = None) -> Config:
@@ -176,4 +198,5 @@ def desde_api(datos: dict, base: Config | None = None) -> Config:
         resolucion_referencia=(1, 1),
         escala_tiempo=parametros.get("escala_tiempo", 1.0),
         difuminar_personas=base.difuminar_personas if base else True,
+        actividad=base.actividad if base else None,
     )

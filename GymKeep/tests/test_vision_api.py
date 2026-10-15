@@ -188,6 +188,19 @@ def test_estado_en_vivo_queda_en_mongo_y_marca_la_camara_en_linea(client, mongo,
     assert (camara["ancho_px"], camara["alto_px"]) == (1920, 1080)
 
 
+def test_estado_ocupada_sin_uso_y_actividad_de_cada_persona(client, mongo, camara_y_equipo):
+    camara_id, equipo_id = camara_y_equipo
+    estado = estado_vivo(equipo_id, estado="ocupada")
+    estado["personas"][0]["activa"] = False
+    assert client.post(f"/api/v1/vision/camaras/{camara_id}/vivo", json=estado).status_code == 202
+    vivo = client.get(f"/api/v1/vision/camaras/{camara_id}/vivo").json()
+    assert vivo["maquinas"][0]["estado"] == "ocupada"
+    assert vivo["personas"][0]["activa"] is False
+    # Ocupada sin uso no es "en uso ahora".
+    maquina = next(m for m in client.get("/api/v1/vision/maquinas").json() if m["equipo_id"] == equipo_id)
+    assert maquina["en_uso_ahora"] is False
+
+
 def test_camara_sin_datos_recientes_queda_sin_senal(client, mongo, camara_y_equipo):
     camara_id, equipo_id = camara_y_equipo
     client.post(f"/api/v1/vision/camaras/{camara_id}/vivo", json=estado_vivo(equipo_id))

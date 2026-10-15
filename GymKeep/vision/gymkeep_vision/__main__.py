@@ -55,6 +55,10 @@ def cmd_procesar(args) -> int:
     cfg = cfg.con_parametros(
         t_on_s=args.t_on, t_off_s=args.t_off, confianza_min=args.confianza, escala_tiempo=args.escala_tiempo
     )
+    if args.actividad:
+        cfg = cfg.con_actividad()
+    if cfg.actividad:
+        logging.info("Actividad por pose: %s (umbral %.2f)", cfg.modelo.pesos, cfg.actividad.umbral)
     inicio, origen_inicio = tiempo.resolver_inicio(args.video, args.inicio, ZONA_HORARIA)
     logging.info("Hora del primer cuadro: %s (%s)", tiempo.hora(inicio), origen_inicio)
     if Path(args.video).exists() and origen_inicio != tiempo.ORIGEN_ARGUMENTO:
@@ -211,6 +215,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--verdad", help="CSV con el uso real anotado a mano: agrega error e IoU al resumen y al grafico")
     p.add_argument("--sin-video", action="store_true", help="no genera el video anotado (mas rapido)")
     p.add_argument("--mostrar", action="store_true", help="muestra el video anotado en una ventana (Q para salir)")
+    p.add_argument(
+        "--actividad",
+        action="store_true",
+        help="mide la actividad con un modelo de pose: quien esta encima sin entrenar no cuenta como uso",
+    )
     p.set_defaults(func=cmd_procesar)
 
     p = sub.add_parser("enviar", help="reenvia a la API los eventos de un eventos.jsonl")
