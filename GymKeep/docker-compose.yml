@@ -109,6 +109,7 @@ services:
       S3_BUCKET: ${S3_BUCKET:-gymkeep-evidencias}
       S3_REGION: ${S3_REGION:-us-east-1}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      VISION_PIN: ${VISION_PIN:-}
     ports:
       - "8000:8000"
     volumes:

@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +27,18 @@ class Settings(BaseSettings):
     s3_secret_key: str = "gymkeep_minio_password"
     s3_bucket: str = "gymkeep-evidencias"
     s3_region: str = "us-east-1"
+
+    # PIN numerico (4 a 6 digitos) para editar zonas y parametros del modulo de vision desde el
+    # panel. Vacio = edicion libre (desarrollo). Ver app/core/pin.py.
+    vision_pin: str = ""
+
+    @field_validator("vision_pin")
+    @classmethod
+    def _pin_valido(cls, valor: str) -> str:
+        valor = valor.strip()
+        if valor and not (valor.isdigit() and 4 <= len(valor) <= 6):
+            raise ValueError("VISION_PIN debe tener entre 4 y 6 digitos")
+        return valor
 
 
 settings = Settings()

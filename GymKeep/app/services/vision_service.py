@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import io
 from datetime import date, datetime, timedelta, timezone
+from urllib.parse import urlsplit, urlunsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from bson import Binary
@@ -66,6 +67,10 @@ def _utc(momento: datetime | None) -> datetime | None:
 
 # ---------------------------------------------------------------- imagenes
 
+# Tope de pixeles: un PNG chico puede declarar una imagen enorme y agotar la memoria al
+# descomprimirlo. 40 MP cubre de sobra cualquier camara o foto de celular.
+MAX_PIXELES = 40_000_000
+
 
 def _a_jpeg(contenido: bytes, max_lado: int) -> tuple[bytes, int, int]:
     """Valida una imagen (JPEG/PNG/WebP), la achica si hace falta y la deja en JPEG."""
@@ -73,8 +78,10 @@ def _a_jpeg(contenido: bytes, max_lado: int) -> tuple[bytes, int, int]:
         raise ImagenInvalida("La imagen esta vacia.")
     try:
         imagen = Image.open(io.BytesIO(contenido))
+        if imagen.width * imagen.height > MAX_PIXELES:
+            raise ImagenInvalida("La imagen es demasiado grande (maximo 40 megapixeles).")
         imagen.load()
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise ImagenInvalida("El archivo no es una imagen valida.") from exc
     imagen = imagen.convert("RGB")
     imagen.thumbnail((max_lado, max_lado))
@@ -188,6 +195,17 @@ def _en_linea(doc: dict | None) -> bool:
     return (_ahora() - _utc(doc["recibido"])).total_seconds() <= EN_LINEA_S
 
 
+def ocultar_clave(url: str | None) -> str | None:
+    """rtsp://usuario:clave@ip/stream -> rtsp://***@ip/stream: el panel no necesita la clave
+    de la camara (el pipeline recibe su fuente por linea de comandos o variable de entorno)."""
+    if not url:
+        return url
+    partes = urlsplit(url)
+    if "@" not in partes.netloc:
+        return url
+    return urlunsplit(partes._replace(netloc="***@" + partes.netloc.rsplit("@", 1)[1]))
+
+
 def resumen_camara(db: Session, camara: Camara, vivo: dict | None) -> dict:
     con_zona = [m for m in maquinas_de_camara(db, camara, solo_con_zona=True)]
     return {
@@ -197,7 +215,7 @@ def resumen_camara(db: Session, camara: Camara, vivo: dict | None) -> dict:
         "sucursal_id": camara.sucursal_id,
         "zona_id": camara.zona_id,
         "estado": camara.estado.value if hasattr(camara.estado, "value") else camara.estado,
-        "rtsp_url": camara.rtsp_url,
+        "rtsp_url": ocultar_clave(camara.rtsp_url),
         "ancho_px": camara.ancho_px,
         "alto_px": camara.alto_px,
         "ultima_conexion": camara.ultima_conexion,

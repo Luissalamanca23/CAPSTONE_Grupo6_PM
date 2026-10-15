@@ -4,6 +4,7 @@ import { api } from '../../api/client.js'
 import { visionApi } from '../../api/vision.js'
 import { CATEGORIAS_EQUIPO } from '../../components/CategoriaEquipoBadge.jsx'
 import { ChipSenal } from './Camaras.jsx'
+import PinDialogo from './PinDialogo.jsx'
 import { ESTADOS_VIVO, textoEstadoVivo } from './uso.js'
 
 const COLOR_SIN_DATO = '#94a3b8'
@@ -241,19 +242,23 @@ function AsignarZona({ camara, equipos, onCancelar, onAsignar }) {
   const [equipoId, setEquipoId] = useState(disponibles[0]?.id || '')
   const [nueva, setNueva] = useState({ nombre: '', codigo_activo: '', categoria: 'cardio' })
   const [error, setError] = useState(null)
+  // Si la zona no se guarda (ej. PIN cancelado), al reintentar se usa la maquina ya creada.
+  const [creadoId, setCreadoId] = useState(null)
 
   async function guardar(e) {
     e.preventDefault()
     setError(null)
     try {
       let id = Number(equipoId)
-      if (opcion === 'nueva') {
+      if (opcion === 'nueva' && creadoId) id = creadoId
+      else if (opcion === 'nueva') {
         const creado = await api.crearEquipo({
           ...nueva,
           sucursal_id: camara.sucursal_id,
           zona_id: camara.zona_id,
         })
         id = creado.id
+        setCreadoId(id)
       }
       await onAsignar(id)
     } catch (err) {
@@ -423,6 +428,7 @@ export default function CamaraVista() {
 
   return (
     <div className="space-y-5">
+      <PinDialogo />
       <Link to="/camaras" className="text-sm text-emerald-700 hover:underline">
         ← Cámaras
       </Link>
@@ -482,7 +488,7 @@ export default function CamaraVista() {
               {confirmarQuitar ? (
                 <span className="inline-flex items-center gap-2">
                   ¿Quitar de la cámara?
-                  <button type="button" onClick={quitar} className="px-2.5 py-1 rounded-md bg-red-600 text-white">Sí, quitar</button>
+                  <button type="button" onClick={() => quitar().catch((err) => setAviso(err.message))} className="px-2.5 py-1 rounded-md bg-red-600 text-white">Sí, quitar</button>
                   <button type="button" onClick={() => setConfirmarQuitar(false)} className="px-2.5 py-1 rounded-md border border-slate-300 bg-white">No</button>
                 </span>
               ) : (

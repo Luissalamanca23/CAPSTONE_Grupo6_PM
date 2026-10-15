@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.pin import pin_requerido, verificar_pin
 from app.models.gymkeep import Camara, Equipo
 from app.schemas.vision import (
     CamaraVisionDetalle,
@@ -51,10 +52,34 @@ def _equipo(db: Session, equipo_id: int) -> Equipo:
 
 
 async def _leer_imagen(request: Request) -> bytes:
-    contenido = await request.body()
-    if len(contenido) > MAX_BYTES_IMAGEN:
-        raise HTTPException(status_code=413, detail="La imagen supera los 5 MB.")
-    return contenido
+    """Lee el cuerpo por partes y corta apenas supera el limite (no carga en memoria un
+    archivo gigante para recien despues rechazarlo)."""
+    demasiado_grande = HTTPException(status_code=413, detail="La imagen supera los 5 MB.")
+    declarado = request.headers.get("content-length")
+    if declarado and declarado.isdigit() and int(declarado) > MAX_BYTES_IMAGEN:
+        raise demasiado_grande
+    contenido = bytearray()
+    async for parte in request.stream():
+        contenido += parte
+        if len(contenido) > MAX_BYTES_IMAGEN:
+            raise demasiado_grande
+    return bytes(contenido)
+
+
+# ---------------------------------------------------------------- PIN de edicion
+
+
+@router.get("/pin")
+def estado_pin():
+    """Si editar zonas y parametros pide PIN (el panel lo pregunta solo cuando hace falta)."""
+    return {"requerido": pin_requerido()}
+
+
+@router.post("/pin/verificar", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verificar_pin)])
+def comprobar_pin():
+    """204 si el PIN de la cabecera X-Vision-Pin es correcto; 401 si no; 429 si la IP esta
+    bloqueada por intentos fallidos."""
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------- camaras y zonas
@@ -74,7 +99,7 @@ def obtener_camara(camara_id: int, db: Session = Depends(get_db)):
     return servicio.detalle_camara(db, _camara(db, camara_id))
 
 
-@router.put("/camaras/{camara_id}/maquinas/{equipo_id}", response_model=MaquinaEnCamara)
+@router.put("/camaras/{camara_id}/maquinas/{equipo_id}", response_model=MaquinaEnCamara, dependencies=[Depends(verificar_pin)])
 def guardar_zona(camara_id: int, equipo_id: int, roi: RoiIn, db: Session = Depends(get_db)):
     """Crea o reemplaza la zona de una maquina en esta camara (lo que el operador dibuja sobre
     la imagen). La maquina debe ser de la misma sucursal que la camara. Para agregar una
@@ -85,7 +110,7 @@ def guardar_zona(camara_id: int, equipo_id: int, roi: RoiIn, db: Session = Depen
     return servicio.guardar_roi(db, camara, equipo, roi.puntos)
 
 
-@router.delete("/camaras/{camara_id}/maquinas/{equipo_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/camaras/{camara_id}/maquinas/{equipo_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verificar_pin)])
 def quitar_zona(camara_id: int, equipo_id: int, db: Session = Depends(get_db)):
     """Quita la maquina de esta camara (el equipo sigue existiendo en el inventario)."""
     if not servicio.quitar_maquina(db, _camara(db, camara_id), equipo_id):
@@ -93,7 +118,7 @@ def quitar_zona(camara_id: int, equipo_id: int, db: Session = Depends(get_db)):
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.put("/camaras/{camara_id}/parametros", response_model=ParametrosVision)
+@router.put("/camaras/{camara_id}/parametros", response_model=ParametrosVision, dependencies=[Depends(verificar_pin)])
 def guardar_parametros(camara_id: int, parametros: ParametrosVision, db: Session = Depends(get_db)):
     """Guarda los parametros de deteccion de esta camara (T_on, T_off, confianza minima,
     gracia, escala de tiempo). El pipeline los toma en su proxima lectura de configuracion."""

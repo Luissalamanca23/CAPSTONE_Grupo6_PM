@@ -73,15 +73,17 @@ Documentados en `http://localhost:8000/docs`, sección "Vision (integracion)".
 
 | Método y ruta | Lo usa | Qué hace |
 |---|---|---|
-| `GET /camaras` | panel | Cámaras con `en_linea`, `tiene_cuadro`, `maquinas` (con zona), `ultima_conexion` |
+| `GET /pin` | panel | `{"requerido": true}` si editar zonas y parámetros pide PIN |
+| `POST /pin/verificar` | panel | 204 si el PIN de la cabecera `X-Vision-Pin` es correcto, 401 si no, 429 tras 5 fallos seguidos (bloqueo de 60 s por IP) |
+| `GET /camaras` | panel | Cámaras con `en_linea`, `tiene_cuadro`, `maquinas` (con zona), `ultima_conexion`. En `rtsp_url` el usuario y la clave van ocultos (`rtsp://***@ip/...`) |
 | `GET /camaras/{id}` | panel | Detalle: `lista_maquinas` (con su `roi`) y `parametros` |
-| `PUT /camaras/{id}/maquinas/{equipo_id}` | panel | Crea o reemplaza la zona. Cuerpo: `{"puntos": [[0.1, 0.5], [0.4, 0.5], [0.4, 0.9]]}` (3 a 40 puntos, entre 0 y 1). La máquina debe ser de la misma sucursal. Una máquina nueva se crea antes con `POST /equipamiento/` |
-| `DELETE /camaras/{id}/maquinas/{equipo_id}` | panel | Quita la máquina de la cámara; el equipo sigue en el inventario |
-| `PUT /camaras/{id}/parametros` | panel | `{"t_on_s": 30, "t_off_s": 90, "confianza_min": 0.5, "gracia_s": 2, "escala_tiempo": 1}`; valida que T_off sea mayor que la gracia |
+| `PUT /camaras/{id}/maquinas/{equipo_id}` | panel (con PIN) | Crea o reemplaza la zona. Cuerpo: `{"puntos": [[0.1, 0.5], [0.4, 0.5], [0.4, 0.9]]}` (3 a 40 puntos, entre 0 y 1). La máquina debe ser de la misma sucursal. Una máquina nueva se crea antes con `POST /equipamiento/` |
+| `DELETE /camaras/{id}/maquinas/{equipo_id}` | panel (con PIN) | Quita la máquina de la cámara; el equipo sigue en el inventario |
+| `PUT /camaras/{id}/parametros` | panel (con PIN) | `{"t_on_s": 30, "t_off_s": 90, "confianza_min": 0.5, "gracia_s": 2, "escala_tiempo": 1}`; valida que T_off sea mayor que la gracia |
 | `GET /camaras/{id}/configuracion` | pipeline | Máquinas activas con zona, más los parámetros |
 | `POST /camaras/{id}/vivo` | pipeline | Estado en vivo (ejemplo abajo) → Mongo y `ultima_conexion` |
 | `GET /camaras/{id}/vivo` | panel | Último estado, con `en_linea` (falso si no llegan datos hace más de 15 s) y `edad_s` |
-| `PUT /camaras/{id}/cuadro` | pipeline y panel | Imagen (cuerpo JPEG o PNG, máx. 5 MB; se guarda en JPEG de hasta 1280 px). Desde el panel sirve para subir una imagen de referencia y dibujar zonas sin pipeline |
+| `PUT /camaras/{id}/cuadro` | pipeline y panel | Imagen (cuerpo JPEG o PNG, máx. 5 MB y 40 megapíxeles; se guarda en JPEG de hasta 1280 px). Desde el panel sirve para subir una imagen de referencia y dibujar zonas sin pipeline |
 | `GET /camaras/{id}/cuadro` | panel | Última imagen (`image/jpeg`, sin caché) |
 | `GET /maquinas` | panel | Por máquina: `horas_uso` (horómetro), `horas_ultimos_7_dias`, `sesiones`, `ultima_sesion`, `ultima_mantencion`, `horas_desde_mantencion`, `incidencias_abiertas`, `camaras`, `medido_por_camara`, `en_uso_ahora`, `estado_vivo`, `tiene_foto` |
 | `GET /maquinas/{id}` | panel | Historial en una llamada: `resumen`, `uso_diario` (30 días), `sesiones`, `incidencias`, `mantenciones` |
@@ -243,8 +245,14 @@ curl -X PUT localhost:8000/api/v1/vision/camaras/2/maquinas/1 -H 'Content-Type: 
    el pipeline sigue solo con el difuminado de cabezas y lo avisa en el log. Costo medido en CPU:
    ~13 ms por cuadro 1080p y ~4 ms en 352x240. En cámaras de baja resolución las caras son muy
    chicas para el detector y la protección depende del difuminado de cabezas.
-2. **Autenticación.** Como el resto de la API, estos endpoints no tienen login. La edición de
-   zonas y parámetros debería quedar solo para administradores.
+2. **PIN de edición.** Guardar o quitar zonas y guardar parámetros (`PUT`/`DELETE
+   .../maquinas/{equipo_id}` y `PUT .../parametros`) piden un PIN de 4 a 6 dígitos, definido en
+   `VISION_PIN` (`.env`; vacío = sin PIN, para desarrollo). El panel lo pregunta solo cuando la
+   API responde 401, lo envía en la cabecera `X-Vision-Pin` y lo recuerda hasta cerrar la
+   pestaña. Tras 5 intentos fallidos seguidos, esa IP queda bloqueada 60 s. Es una protección
+   liviana, no un sistema de usuarios: el contador vive en memoria del proceso de la API y,
+   detrás de un proxy, todas las peticiones comparten IP. Ver lo que el pipeline envía, las
+   imágenes y el uso de máquinas no pide PIN.
 3. **Volumen en Mongo.** Cada cámara reescribe una imagen de 50–150 KB cada 2 s (no crece) y suma
    un documento por segundo en `detecciones_raw` mientras hay gente (TTL 7 días). Con muchas
    cámaras, conviene enviar la imagen solo cuando alguien está mirando el panel.
