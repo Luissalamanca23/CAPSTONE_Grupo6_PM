@@ -12,7 +12,9 @@ Guia completa: vision/INTEGRACION.md.
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.core.database import get_db
 from app.models.gymkeep import Camara, Equipo
@@ -28,6 +30,7 @@ from app.schemas.vision import (
     ParametrosVision,
     RoiIn,
 )
+from app.services import mjpeg
 from app.services import vision_service as servicio
 
 router = APIRouter()
@@ -134,7 +137,9 @@ async def subir_cuadro(camara_id: int, request: Request, db: Session = Depends(g
     referencia y dibujar las zonas antes de tener el pipeline corriendo."""
     camara = _camara(db, camara_id)
     try:
-        return servicio.guardar_cuadro(camara, await _leer_imagen(request))
+        contenido = await _leer_imagen(request)
+        # Pillow y Mongo son bloqueantes: a un hilo, para no frenar los streams en curso.
+        return await run_in_threadpool(servicio.guardar_cuadro, camara, contenido)
     except servicio.ImagenInvalida as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -147,6 +152,21 @@ def obtener_cuadro(camara_id: int, db: Session = Depends(get_db)):
     if contenido is None:
         raise HTTPException(status_code=404, detail="Esta camara todavia no tiene imagen.")
     return Response(content=contenido, media_type="image/jpeg", headers=SIN_CACHE)
+
+
+@router.get("/camaras/{camara_id}/stream", response_class=StreamingResponse)
+async def stream_camara(camara_id: int, request: Request, db: Session = Depends(get_db)):
+    """Video en vivo de la camara como MJPEG (`multipart/x-mixed-replace`): se ve directo en
+    un navegador, o en el panel con `<img src=".../stream">`. Entrega cada cuadro nuevo que
+    sube el pipeline (cada ~1 s, con las cabezas difuminadas); mientras no haya ninguno, la
+    conexion queda abierta esperando. Termina cuando el cliente se desconecta."""
+    _camara(db, camara_id)
+    db.close()  # la sesion de base de datos no debe quedar tomada mientras dura el video
+    return StreamingResponse(
+        mjpeg.flujo(camara_id, servicio.leer_cuadro_si_nuevo, desconectado=request.is_disconnected),
+        media_type=mjpeg.MEDIA_TYPE,
+        headers=SIN_CACHE,
+    )
 
 
 # ---------------------------------------------------------------- uso de maquinas
@@ -181,7 +201,8 @@ async def subir_foto(equipo_id: int, request: Request, db: Session = Depends(get
     """Sube la foto de referencia (cuerpo = JPEG o PNG)."""
     _equipo(db, equipo_id)
     try:
-        return servicio.guardar_foto(equipo_id, await _leer_imagen(request), origen="subida")
+        contenido = await _leer_imagen(request)
+        return await run_in_threadpool(servicio.guardar_foto, equipo_id, contenido, origen="subida")
     except servicio.ImagenInvalida as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

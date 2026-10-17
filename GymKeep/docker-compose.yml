@@ -16,6 +16,8 @@ services:
       # primera vez que se crea el volumen db_data. Ver GymKeep_BDD_Completa/README.md.
       - ./postgres/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./postgres/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+      # Vistas legibles (v_equipos, v_incidencias...) para mirar los datos en Adminer.
+      - ./postgres/vistas_legibles.sql:/docker-entrypoint-initdb.d/03-vistas.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gymkeep} -d ${POSTGRES_DB:-gymkeep}"]
       interval: 5s
@@ -116,6 +118,40 @@ services:
     # El esquema ya lo crea Postgres con schema.sql (arriba), por eso ya no se ejecuta
     # app.init_db aqui: solo levanta la API.
     command: sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  # Visores de las bases de datos (solo para desarrollo). No arrancan con `docker compose up`:
+  # se piden por nombre, y asi no pueden romper el arranque normal si una imagen no se descarga.
+  #   docker compose up -d adminer mongo-express
+  adminer:
+    image: adminer:4
+    container_name: gymkeep_adminer
+    profiles: ["bd"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+      ADMINER_DESIGN: pepa-linha
+      # tables-filter: buscador de tablas en el menu; json-column: muestra bonito las columnas JSON.
+      ADMINER_PLUGINS: tables-filter json-column
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: gymkeep_mongo_express
+    profiles: ["bd"]
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_ROOT_USER:-gymkeep}:${MONGO_ROOT_PASSWORD:-gymkeep_mongo_password}@mongo:27017/?authSource=admin
+      ME_CONFIG_BASICAUTH: "false"
+      ME_CONFIG_OPTIONS_EDITORTHEME: ambiance
+    ports:
+      - "${MONGO_EXPRESS_PORT:-8081}:8081"
 
 volumes:
   db_data:

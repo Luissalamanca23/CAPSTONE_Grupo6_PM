@@ -32,6 +32,17 @@ const ICONOS = {
       <path d="M14.8 9.5c0-1.1-1.25-2-2.8-2s-2.8.9-2.8 2c0 1.1 1.25 1.5 2.8 2s2.8.9 2.8 2c0 1.1-1.25 2-2.8 2s-2.8-.9-2.8-2" />
     </svg>
   ),
+  uso: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5 shrink-0">
+      <path d="M3 12h4l3-8 4 16 3-8h4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  camaras: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5 shrink-0">
+      <rect x="2.5" y="6" width="13" height="12" rx="2" />
+      <path d="m15.5 10.5 6-3v9l-6-3" strokeLinejoin="round" />
+    </svg>
+  ),
   sucursales: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5 shrink-0">
       <path d="M3 21h18" />
@@ -46,6 +57,8 @@ const ENLACES = [
   { to: '/equipos', label: 'Equipamiento', icono: ICONOS.equipos },
   { to: '/incidencias', label: 'Incidencias', icono: ICONOS.incidencias },
   { to: '/costos', label: 'Costos', icono: ICONOS.costos },
+  { to: '/uso', label: 'Uso de máquinas', icono: ICONOS.uso },
+  { to: '/camaras', label: 'Cámaras', icono: ICONOS.camaras },
   { to: '/sucursales', label: 'Sucursales', icono: ICONOS.sucursales },
 ]
 

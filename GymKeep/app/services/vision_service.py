@@ -331,6 +331,21 @@ def leer_cuadro(camara_id: int) -> bytes | None:
     return bytes(doc["cuadro"]) if doc and doc.get("cuadro") else None
 
 
+def leer_cuadro_si_nuevo(camara_id: int, desde) -> tuple[datetime, bytes] | None:
+    """Para el streaming: devuelve (marca, jpeg) si hay un cuadro distinto del que ya se
+    entrego (`desde` es la marca de la entrega anterior, None la primera vez). Primero mira solo
+    la marca de tiempo para no leer la imagen de Mongo cuando no cambio."""
+    coleccion = get_mongo_db().camaras_vivo
+    meta = coleccion.find_one({"_id": camara_id}, {"cuadro_timestamp": 1})
+    marca = meta.get("cuadro_timestamp") if meta else None
+    if marca is None or marca == desde:
+        return None
+    doc = coleccion.find_one({"_id": camara_id}, {"cuadro": 1, "cuadro_timestamp": 1})
+    if not doc or not doc.get("cuadro"):
+        return None
+    return doc.get("cuadro_timestamp"), bytes(doc["cuadro"])
+
+
 # ---------------------------------------------------------------- uso de maquinas
 
 

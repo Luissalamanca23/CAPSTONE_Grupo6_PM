@@ -66,9 +66,10 @@ Panel en `http://localhost:5173`.
 
 `postgres/seed.sql` carga solo lo mínimo. Si quieres datos variados para probar
 filtros, paginación y la vista de Costos, hay dos scripts opcionales en
-`postgres/`: `reset_demo_incidencias.sql` y `agregar_mas_datos.sql`. El README
-(sección "Datos de ejemplo") trae los comandos exactos para correrlos, incluyendo
-la diferencia entre PowerShell y cmd/Git Bash (ver nota siguiente).
+`postgres/`: `reset_demo_incidencias.sql` y `agregar_mas_datos.sql`; y para que los
+gráficos del Panel tengan historia (costos, mantenciones), `datos_demo_dashboard.sql`, que se
+corre al final. El README (sección "Datos de ejemplo") trae los comandos exactos para
+correrlos, incluyendo la diferencia entre PowerShell y cmd/Git Bash (ver nota siguiente).
 
 ### Nota si usas PowerShell en Windows
 

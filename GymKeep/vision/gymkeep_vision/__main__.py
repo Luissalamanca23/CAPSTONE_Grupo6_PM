@@ -31,6 +31,10 @@ def cmd_procesar(args) -> int:
     from gymkeep_vision import vivo
 
     cliente = _cliente(args.api) if args.api else None
+    if cliente is not None:
+        from gymkeep_vision import preset
+
+        preset.esperar_api(cliente, args.esperar_api)
     publicador = None
     if args.camara:
         # Zonas y parametros salen de la plataforma (lo que se dibujo en el panel); el YAML,
@@ -41,7 +45,13 @@ def cmd_procesar(args) -> int:
         datos = vivo.leer_configuracion(cliente, camara["id"])
         base = config_mod.cargar(args.config) if args.config else None
         cfg = config_mod.desde_api(datos, base)
-        publicador = vivo.PublicadorVivo(cliente, camara["id"], huella_config=vivo.huella(datos))
+        publicador = vivo.PublicadorVivo(
+            cliente,
+            camara["id"],
+            cada_estado_s=args.estado_cada,
+            cada_cuadro_s=args.cuadro_cada,
+            huella_config=vivo.huella(datos),
+        )
         logging.info("Camara %s (id %s): %d maquinas con zona", cfg.camara.codigo, cfg.camara.id, len(cfg.maquinas))
     elif args.config:
         cfg = config_mod.cargar(args.config)
@@ -109,6 +119,26 @@ def cmd_procesar(args) -> int:
                     f.write(json.dumps(evento, ensure_ascii=False) + "\n")
             print("Los fallidos quedaron en eventos_pendientes.jsonl (reenviar con el comando 'enviar').")
     return 0
+
+
+def cmd_zonas(args) -> int:
+    """Aplica a una camara de GymKeep las zonas de un JSON (preset), una sola vez si se da --marca."""
+    from gymkeep_vision import preset, vivo
+
+    marca = Path(args.marca) if args.marca else None
+    if marca is not None and marca.exists() and not args.forzar:
+        logging.info("Las zonas iniciales ya se aplicaron antes (%s); se respetan las del panel", marca)
+        return 0
+    cliente = _cliente(args.api)
+    preset.esperar_api(cliente, args.esperar_api)
+    datos = preset.leer_preset(Path(args.preset))
+    camara = vivo.buscar_camara(cliente, args.camara or datos["camara"])
+    aplicadas = preset.aplicar(cliente, camara, datos, crear_equipos=not args.sin_crear)
+    if marca is not None and aplicadas:
+        marca.parent.mkdir(parents=True, exist_ok=True)
+        marca.write_text(datetime.now().isoformat(timespec="seconds") + "\n", encoding="utf-8")
+    print(f"Zonas aplicadas a {camara['codigo']}: {aplicadas}")
+    return 0 if aplicadas else 1
 
 
 def cmd_enviar(args) -> int:
@@ -200,9 +230,24 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--confianza", type=float, help="sobrescribe la confianza minima (MP-47)")
     p.add_argument("--escala-tiempo", type=float, help="segundos reales por segundo de video (videos de NVR acelerados)")
     p.add_argument("--verdad", help="CSV con el uso real anotado a mano: agrega error e IoU al resumen y al grafico")
+    p.add_argument(
+        "--esperar-api", type=float, default=0.0, metavar="S", help="espera hasta S segundos a que la API responda"
+    )
+    p.add_argument("--cuadro-cada", type=float, default=2.0, metavar="S", help="cada cuantos segundos sube un cuadro al panel")
+    p.add_argument("--estado-cada", type=float, default=1.0, metavar="S", help="cada cuantos segundos informa el estado de las maquinas")
     p.add_argument("--sin-video", action="store_true", help="no genera el video anotado (mas rapido)")
     p.add_argument("--mostrar", action="store_true", help="muestra el video anotado en una ventana (Q para salir)")
     p.set_defaults(func=cmd_procesar)
+
+    p = sub.add_parser("zonas", help="aplica a una camara las zonas de un JSON (config/zonas_cintas.json)")
+    p.add_argument("preset", help="JSON con las zonas (poligonos normalizados 0..1)")
+    p.add_argument("--api", required=True)
+    p.add_argument("--camara", help="codigo de la camara (por defecto, el del JSON)")
+    p.add_argument("--esperar-api", type=float, default=0.0, metavar="S")
+    p.add_argument("--marca", help="archivo que recuerda que ya se aplicaron (no se repite aunque se reinicie)")
+    p.add_argument("--forzar", action="store_true", help="aplicar aunque exista la marca (pisa lo editado en el panel)")
+    p.add_argument("--sin-crear", action="store_true", help="no crear los equipos que falten en GymKeep")
+    p.set_defaults(func=cmd_zonas)
 
     p = sub.add_parser("enviar", help="reenvia a la API los eventos de un eventos.jsonl")
     p.add_argument("eventos")

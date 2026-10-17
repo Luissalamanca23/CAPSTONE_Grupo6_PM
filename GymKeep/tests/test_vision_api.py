@@ -299,3 +299,37 @@ def test_foto_subida_y_desde_la_camara(client, mongo, camara_y_equipo):
     assert client.get("/api/v1/vision/maquinas").json()[0]["tiene_foto"] is True
 
     assert client.put(url, content=imagen("PNG")).json()["origen"] == "subida"
+
+
+# ---------------------------------------------------------------- video en vivo (MJPEG)
+
+
+def test_leer_cuadro_si_nuevo_solo_entrega_cuadros_distintos(client, mongo, camara_y_equipo):
+    camara_id, _ = camara_y_equipo
+    assert vision_service.leer_cuadro_si_nuevo(camara_id, None) is None  # todavia no hay imagen
+
+    client.put(f"/api/v1/vision/camaras/{camara_id}/cuadro", content=imagen("JPEG"))
+    marca, jpeg = vision_service.leer_cuadro_si_nuevo(camara_id, None)
+    assert jpeg[:2] == b"\xff\xd8"
+    assert vision_service.leer_cuadro_si_nuevo(camara_id, marca) is None  # el mismo: no se repite
+
+    client.put(f"/api/v1/vision/camaras/{camara_id}/cuadro", content=imagen("PNG"))
+    otra_marca, _ = vision_service.leer_cuadro_si_nuevo(camara_id, marca)
+    assert otra_marca != marca
+
+
+def test_stream_de_la_camara(client, mongo, camara_y_equipo, monkeypatch):
+    from app.services import mjpeg
+
+    camara_id, _ = camara_y_equipo
+
+    async def dos_cuadros(*args, **kwargs):  # el flujo real no termina: aqui se corta tras dos partes
+        yield mjpeg.parte(b"\xff\xd8uno")
+        yield mjpeg.parte(b"\xff\xd8dos")
+
+    monkeypatch.setattr(mjpeg, "flujo", dos_cuadros)
+    respuesta = client.get(f"/api/v1/vision/camaras/{camara_id}/stream")
+    assert respuesta.status_code == 200
+    assert respuesta.headers["content-type"] == mjpeg.MEDIA_TYPE
+    assert respuesta.content.count(b"--" + mjpeg.BOUNDARY.encode()) == 2
+    assert client.get("/api/v1/vision/camaras/9999/stream").status_code == 404

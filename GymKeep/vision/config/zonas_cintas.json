@@ -1,0 +1,24 @@
+{
+  "descripcion": "Zonas de las 3 cintas de correr visibles en datos/cctv_cintas.mp4 (352x240). Coordenadas normalizadas 0..1 sobre el cuadro; son aproximadas: se ajustan dibujando sobre la imagen en el panel (Camaras > CAM-01 > Zonas).",
+  "camara": "CAM-01",
+  "maquinas": [
+    {
+      "codigo_activo": "EQ-0001",
+      "nombre": "Cinta de correr 01",
+      "categoria": "cardio",
+      "puntos": [[0.7237, 0.0974], [0.8278, 0.0974], [0.8278, 0.2853], [0.7237, 0.2853]]
+    },
+    {
+      "codigo_activo": "EQ-0002",
+      "nombre": "Cinta de correr 02",
+      "categoria": "cardio",
+      "puntos": [[0.8278, 0.2296], [0.9177, 0.2296], [0.9177, 0.4175], [0.8278, 0.4175]]
+    },
+    {
+      "codigo_activo": "EQ-0014",
+      "nombre": "Cinta de correr 03",
+      "categoria": "cardio",
+      "puntos": [[0.9224, 0.2714], [1.0, 0.2714], [1.0, 0.4592], [0.9224, 0.4592]]
+    }
+  ]
+}

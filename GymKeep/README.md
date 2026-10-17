@@ -63,7 +63,19 @@ Diseño responsive (menú lateral en escritorio, menú hamburguesa en celular/ta
 botón flotante de **Ayuda** (preguntas frecuentes) disponible en todas las pantallas.
 
 - **Panel**: resumen (equipos registrados, incidencias pendientes/en proceso, equipos
-  fuera de servicio) y la cola de incidencias sin resolver, ordenada por prioridad.
+  fuera de servicio) y, debajo, lo que interesa al dueño del gimnasio:
+  - **Atención recomendada**: avisos de incidencias urgentes/altas abiertas hace más de
+    48 h, máquinas con 3 o más incidencias en 30 días y máquinas con más de 200 h de uso
+    desde su última mantención (este último aviso usa los datos de las cámaras). Los
+    umbrales están al inicio de `frontend/src/utils/analitica.js`.
+  - **Análisis** con un único filtro de periodo (8 semanas / 6 meses / 12 meses): cifras
+    del periodo comparadas con el anterior (incidencias, tasa de resolución, tiempo medio
+    de resolución, gasto) y gráficos de tendencia de incidencias reportadas vs. resueltas,
+    gasto correctivo vs. preventivo, tipos de falla, categorías de máquina, máquinas con
+    más fallas y más gasto, mapa de calor día × franja horaria, estado de la flota y uso
+    de los últimos 7 días. Cada gráfico tiene un botón **Ver tabla** con los mismos datos.
+  - El monitor de máquinas por zona (con el estado en vivo de las cámaras) y la cola de
+    incidencias sin resolver ordenada por prioridad, ambos paginados.
 - **Equipamiento**: alta de equipos (sucursal/zona/categoría), miniatura del QR, semáforo
   de **salud del equipo** (verde/naranjo/rojo/negro según incidencias abiertas y estado),
   cambio de estado, búsqueda por texto y filtro por categoría/estado. Tabla con scroll
@@ -83,6 +95,17 @@ botón flotante de **Ayuda** (preguntas frecuentes) disponible en todas las pant
   técnico, qué se hizo, costo) con los mismos filtros que el historial de incidencias.
 - **Sucursales**: alta de empresa (si no existe ninguna), sucursales y zonas — base
   necesaria para poder registrar equipamiento.
+- **Uso de máquinas** (`/uso`): tiempo de uso de cada máquina medido por las cámaras —
+  horómetro, horas de los últimos 7 días, horas desde la última mantención y chip en vivo
+  ("En uso 04:39", "Detectando 12/30 s", "Libre"). Con búsqueda, orden y filtro "solo
+  medidas por cámara". Al abrir una máquina (`/uso/:id`): foto de referencia (subir o
+  tomar de la cámara), gráfico de uso de los últimos 30 días y pestañas de sesiones,
+  incidencias y mantenciones.
+- **Cámaras** (`/camaras`): lista con la última imagen y si el pipeline está en línea. En
+  cada cámara (`/camaras/:id`): imagen en vivo con las zonas de las máquinas y las personas
+  detectadas encima, **editor de zonas** (dibujar, arrastrar vértices, quitar), parámetros
+  de detección (T_on, T_off, confianza, gracia, escala de tiempo) y subida de una imagen de
+  referencia para dibujar zonas sin tener el pipeline corriendo.
 
 ### 3. Formulario público de reporte (`/reportar/:token`)
 
@@ -150,19 +173,25 @@ GymKeep/
 │   └── src/
 │       ├── layouts/AdminLayout.jsx         # Menu lateral/responsive + boton de Ayuda
 │       ├── components/                     # Badges (Estado/Prioridad/TipoFalla/
-│       │                                     Categoria/CategoriaEquipo), StatCard, FaqAyuda
+│       │                                     Categoria/CategoriaEquipo), StatCard, FaqAyuda,
+│       │                                     Paginacion, EstadoVivoChip,
+│       │                                     graficos.jsx (graficos SVG propios, sin librerias)
 │       ├── pages/Reportar.jsx              # Formulario publico (encuesta) del QR
 │       ├── pages/EquipoDetalle.jsx         # QR, historial filtrable, mantenimientos + costo
 │       ├── pages/Equipos.jsx               # Listado/alta de equipos, filtros, categorias
 │       ├── pages/Incidencias.jsx           # Listado con filtros, fechas y paginacion
 │       ├── pages/Costos.jsx                # Vista consolidada de gastos de mantencion
+│       ├── pages/UsoMaquinas.jsx, UsoMaquinaDetalle.jsx   # Uso medido por camaras
+│       ├── pages/Camaras.jsx, CamaraVista.jsx             # Camaras, zonas en vivo y editor
 │       ├── pages/Dashboard.jsx, Sucursales.jsx
-│       ├── utils/formato.js, saludEquipo.js
+│       ├── utils/formato.js, saludEquipo.js, vision.js, paginacion.js,
+│       │         analitica.js              # Calculos del Panel (KPIs, series, alertas)
 │       └── api/client.js
 ├── postgres/
 │   ├── schema.sql, seed.sql                # Esquema completo + datos de ejemplo minimos
 │   └── reset_demo_incidencias.sql,
-│       agregar_mas_datos.sql               # Scripts opcionales para poblar datos de demo
+│       agregar_mas_datos.sql,
+│       datos_demo_dashboard.sql            # Scripts opcionales para poblar datos de demo
 │                                             variados (ver seccion "Datos de ejemplo")
 ├── mongo/init-mongo.js                      # Colecciones de IA (con TTL)
 ├── docker-compose.yml                       # Postgres + Mongo + API (+ MinIO opcional)
@@ -237,6 +266,57 @@ Panel en `http://localhost:5173`.
 - Si `docker compose up` falla para un contenedor que no sea `db`, `mongo` o `api`, revisa
   que no estés intentando levantar el perfil `storage` (MinIO) sin quererlo.
 
+## Módulo de visión en el panel
+
+El backend de visión (`/api/v1/vision/...`) viene incluido en la API. El pipeline que mira
+el video (YOLO) corre aparte, en su propio contenedor, y **no** se levanta con el
+`docker compose up` normal. Sin pipeline las pantallas **Uso de máquinas** y **Cámaras**
+funcionan igual (se puede subir una imagen de referencia y dibujar zonas), pero sin datos
+en vivo. Para verlo andando con el video de prueba:
+
+```bash
+# 1) Copia el video a GymKeep/vision/datos/cctv_cintas.mp4 (esa carpeta no se sube a git)
+# 2) Desde GymKeep: UN comando levanta todo (db, mongo, api y visión):
+docker compose -f docker-compose.vision.yml up -d --build
+docker compose -f docker-compose.vision.yml logs -f vision     # seguir lo que hace
+```
+
+Listo: el contenedor espera a la API, deja las zonas de las 3 cintas en la cámara `CAM-01` y analiza
+el video en bucle como si fuera una cámara en vivo. Se ve en el panel, **Cámaras → CAM-01**
+(`http://localhost:5173/camaras`); el video en vivo también se abre directo en
+`http://localhost:8000/api/v1/vision/camaras/1/stream` (cambia el `1` por el id de la cámara) y
+todos los endpoints están en `http://localhost:8000/docs`, sección *vision*. La primera
+construcción es lenta (descarga PyTorch y los pesos de YOLO). Las zonas iniciales son aproximadas:
+se ajustan arrastrando los vértices en el panel. Para otro video o una cámara RTSP, ver las
+variables `VISION_*` en `vision/INTEGRACION.md` (§6). Detalles del pipeline: `vision/README.md`.
+
+## Ver las bases de datos
+
+Dos visores web, solo para desarrollo (no arrancan con el `up` normal):
+
+```bash
+docker compose up -d adminer mongo-express
+```
+
+- **PostgreSQL** (Adminer): <http://localhost:8080>. Sistema `PostgreSQL`, servidor `db`, usuario
+  `gymkeep`, contraseña `gymkeep_password`, base `gymkeep`. Atajo con el servidor ya elegido:
+  <http://localhost:8080/?pgsql=db&username=gymkeep&db=gymkeep>.
+- **MongoDB** (mongo-express): <http://localhost:8081>, sin login. Base `gymkeep_ai`
+  (colecciones `camaras_vivo`, `detecciones_raw`, `telemetria_camaras`, `eventos_ia`...).
+
+En Adminer, además de las tablas hay **vistas legibles** (las que empiezan con `v_`): equipos,
+incidencias, mantenciones, sesiones de uso, cámaras y costos por mes, ya con nombres en vez de ids,
+fechas en hora de Chile y montos en pesos. Son solo para mirar. Se crean solas al crear la base por
+primera vez; si ya la tenías, cárgalas una vez (se pueden repetir sin problema):
+
+```powershell
+Get-Content postgres\vistas_legibles.sql -Raw | docker compose exec -T db psql -U gymkeep -d gymkeep
+```
+
+Los puertos se cambian con `ADMINER_PORT` y `MONGO_EXPRESS_PORT` en `.env`. Si prefieres un
+cliente de escritorio (DBeaver, pgAdmin, Compass), las bases también están en
+`localhost:5432` (Postgres) y `localhost:27017` (Mongo) con las mismas credenciales.
+
 ## Datos de ejemplo
 
 `postgres/seed.sql` carga solo lo mínimo (una sucursal, una zona, un equipo). Para tener
@@ -260,6 +340,33 @@ docker compose exec -T db psql -U gymkeep -d gymkeep < postgres/agregar_mas_dato
 
 Ambos son seguros de correr más de una vez (usan `ON CONFLICT DO NOTHING` para los
 equipos/zonas; las incidencias simplemente se suman).
+
+### Historial de costos y mantenciones (para el Panel)
+
+Para que los gráficos del Panel (tendencias, gasto, rankings, mapa de calor) tengan
+sentido hace falta historia. Ejecútalo **al final**, después de los dos scripts anteriores:
+
+```bash
+# Windows PowerShell:
+Get-Content postgres/datos_demo_dashboard.sql -Raw | docker compose exec -T db psql -U gymkeep -d gymkeep
+
+# cmd / bash / Git Bash:
+docker compose exec -T db psql -U gymkeep -d gymkeep < postgres/datos_demo_dashboard.sql
+```
+
+`datos_demo_dashboard.sql` genera ~2 años de datos relacionados entre sí: unas 5 incidencias
+nuevas por semana (con más fallas lunes y martes y en horario punta), cada incidencia
+resuelta con su **mantención correctiva** y un costo según el tipo de falla (una pieza rota o
+un equipo que no enciende cuesta mucho más que un desgaste), **mantenciones preventivas**
+periódicas por máquina, inspecciones, y algunas máquinas "problemáticas" con muchas fallas y
+poca prevención. También deja incidencias urgentes sin atender y mantenciones abiertas para
+que aparezcan los avisos de "Atención recomendada", y le agrega su mantención con costo a las
+incidencias que ya estaban resueltas. Las fechas son relativas a hoy.
+
+Es seguro correrlo varias veces: al empezar borra solo lo que creó una corrida anterior
+(filas marcadas como demo) y lo vuelve a generar; no toca lo que hayas creado a mano. Si
+después vuelves a ejecutar `reset_demo_incidencias.sql` (que borra todas las incidencias),
+corre este script de nuevo.
 
 ## Probar el flujo del QR
 

@@ -6,7 +6,9 @@ import CategoriaEquipoBadge from '../components/CategoriaEquipoBadge.jsx'
 import CategoriaBadge from '../components/CategoriaBadge.jsx'
 import PrioridadBadge from '../components/PrioridadBadge.jsx'
 import TipoFallaBadge from '../components/TipoFallaBadge.jsx'
+import Paginacion from '../components/Paginacion.jsx'
 import { formatearFechaHora, formatearMonto } from '../utils/formato.js'
+import { usePaginacion } from '../utils/paginacion.js'
 import { getSaludEquipo } from '../utils/saludEquipo.js'
 
 const ESTADOS_ABIERTOS = ['pendiente', 'en_proceso']
@@ -80,6 +82,13 @@ export default function EquipoDetalle() {
       return true
     })
   }, [incidencias, filtroCategoriaHist, filtroEstadoHist, fechaDesdeHist, fechaHastaHist])
+
+  const paginacionIncidencias = usePaginacion(
+    incidenciasFiltradas,
+    10,
+    `${filtroCategoriaHist}|${filtroEstadoHist}|${fechaDesdeHist}|${fechaHastaHist}`
+  )
+  const paginacionMantenimientos = usePaginacion(mantenimientos, 10)
 
   const hayFiltrosHistActivos = Boolean(filtroCategoriaHist || filtroEstadoHist || fechaDesdeHist || fechaHastaHist)
 
@@ -435,7 +444,7 @@ export default function EquipoDetalle() {
                     </td>
                   </tr>
                 )}
-                {incidenciasFiltradas.map((incidencia) => (
+                {paginacionIncidencias.visibles.map((incidencia) => (
                   <tr key={incidencia.id} className="border-t border-slate-100">
                     <td className="px-5 py-2 whitespace-nowrap">{formatearFechaHora(incidencia.fecha_reporte)}</td>
                     <td className="px-5 py-2">
@@ -456,6 +465,7 @@ export default function EquipoDetalle() {
               </tbody>
             </table>
             </div>
+            <Paginacion paginacion={paginacionIncidencias} />
           </div>
 
           <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
@@ -491,7 +501,7 @@ export default function EquipoDetalle() {
                     </td>
                   </tr>
                 )}
-                {mantenimientos.map((mantenimiento) => {
+                {paginacionMantenimientos.visibles.map((mantenimiento) => {
                   const incidenciaRelacionada = mantenimiento.incidencia_id
                     ? incidenciasPorId.get(mantenimiento.incidencia_id)
                     : null
@@ -517,6 +527,7 @@ export default function EquipoDetalle() {
               </tbody>
             </table>
             </div>
+            <Paginacion paginacion={paginacionMantenimientos} />
           </div>
         </div>
       </div>

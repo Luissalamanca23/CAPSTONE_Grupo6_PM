@@ -125,7 +125,9 @@ avisa que su uso puede quedar subestimado. Conviene una cámara elevada.
 
 Con `--camara`, las zonas y los parámetros salen de la plataforma (se dibujan en el panel y el
 pipeline los relee cada 5 s), y el estado de cada máquina y la imagen se envían en vivo a la API
-(registro en MongoDB). También corre en Docker, en CPU: `docker-compose.vision.yml`. La guía de la
+(registro en MongoDB). También corre en Docker, en CPU: con la API arriba,
+`docker compose -f docker-compose.vision.yml up -d --build` analiza `datos/cctv_cintas.mp4` como la
+cámara `CAM-01` y deja el video en vivo en el panel (variables y detalles en `INTEGRACION.md`, §6). La guía de la
 integración con el panel (endpoints, datos y pantallas) está en [`INTEGRACION.md`](INTEGRACION.md).
 
 ## Configuración de una cámara

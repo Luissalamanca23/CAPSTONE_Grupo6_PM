@@ -5,6 +5,7 @@ import EstadoBadge from '../components/EstadoBadge.jsx'
 import PrioridadBadge from '../components/PrioridadBadge.jsx'
 import TipoFallaBadge from '../components/TipoFallaBadge.jsx'
 import CategoriaBadge from '../components/CategoriaBadge.jsx'
+import Paginacion from '../components/Paginacion.jsx'
 import { formatearFechaHora } from '../utils/formato.js'
 import { getSaludEquipo } from '../utils/saludEquipo.js'
 
@@ -119,8 +120,6 @@ export default function Incidencias() {
   }
 
   const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA))
-  const desde = total === 0 ? 0 : (pagina - 1) * POR_PAGINA + 1
-  const hasta = Math.min(pagina * POR_PAGINA, total)
 
   return (
     <div className="space-y-4">
@@ -318,32 +317,7 @@ export default function Incidencias() {
           </table>
         </div>
 
-        <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 text-sm">
-          <p className="text-slate-400 text-xs">
-            {total === 0 ? 'Sin resultados' : `Mostrando ${desde}–${hasta} de ${total}`}
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={pagina <= 1}
-              onClick={() => setPagina((p) => Math.max(1, p - 1))}
-              className="px-3 py-1.5 rounded-md border border-slate-300 text-xs font-medium text-slate-600 disabled:opacity-40 hover:bg-slate-50"
-            >
-              ‹ Anterior
-            </button>
-            <span className="text-xs text-slate-500">
-              Página {pagina} de {totalPaginas}
-            </span>
-            <button
-              type="button"
-              disabled={pagina >= totalPaginas}
-              onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
-              className="px-3 py-1.5 rounded-md border border-slate-300 text-xs font-medium text-slate-600 disabled:opacity-40 hover:bg-slate-50"
-            >
-              Siguiente ›
-            </button>
-          </div>
-        </div>
+        <Paginacion paginacion={{ pagina, setPagina, total, totalPaginas, porPagina: POR_PAGINA }} siempre />
       </div>
     </div>
   )

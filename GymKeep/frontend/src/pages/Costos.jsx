@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client.js'
 import CategoriaEquipoBadge from '../components/CategoriaEquipoBadge.jsx'
+import Paginacion from '../components/Paginacion.jsx'
 import StatCard from '../components/StatCard.jsx'
+import { usePaginacion } from '../utils/paginacion.js'
 import { formatearFechaHora, formatearMonto } from '../utils/formato.js'
 
 const TIPOS_MANTENIMIENTO = [
@@ -49,6 +51,13 @@ export default function Costos() {
       .catch((err) => setError(err.message))
       .finally(() => setCargando(false))
   }, [filtroEquipo, filtroTipo, fechaDesde, fechaHasta, busqueda])
+
+  // Las tarjetas de arriba suman TODOS los mantenimientos filtrados; la tabla los muestra por paginas.
+  const paginacion = usePaginacion(
+    mantenimientos,
+    25,
+    `${filtroEquipo}|${filtroTipo}|${fechaDesde}|${fechaHasta}|${busqueda}`
+  )
 
   const hayFiltrosActivos = Boolean(filtroEquipo || filtroTipo || fechaDesde || fechaHasta || busqueda)
 
@@ -236,7 +245,7 @@ export default function Costos() {
                   </td>
                 </tr>
               )}
-              {mantenimientos.map((m) => (
+              {paginacion.visibles.map((m) => (
                 <tr key={m.id} className="border-t border-slate-100">
                   <td className="px-5 py-2 whitespace-nowrap">{formatearFechaHora(m.fecha_fin || m.fecha_inicio)}</td>
                   <td className="px-5 py-2">
@@ -260,6 +269,7 @@ export default function Costos() {
             </tbody>
           </table>
         </div>
+        <Paginacion paginacion={paginacion} />
       </div>
     </div>
   )

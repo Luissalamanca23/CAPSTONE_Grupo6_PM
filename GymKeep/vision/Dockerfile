@@ -2,17 +2,19 @@
 # Prototipo de integracion: ver INTEGRACION.md y docker-compose.vision.yml.
 FROM python:3.11-slim
 
-# OpenCV necesita estas librerias del sistema.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+# Sin apt-get: se usa OpenCV "headless" (mas abajo), que no necesita librerias graficas del
+# sistema. Asi la imagen se construye aunque la red bloquee los repositorios de Debian.
 
 WORKDIR /app
 
 # torch para CPU primero: el paquete por defecto trae CUDA y pesa ~3 GB.
 RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# ultralytics trae opencv-python (que pide libGL): se cambia por la version headless.
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip uninstall -y opencv-python \
+    && pip install --no-cache-dir "opencv-python-headless>=4.6" \
+    && python -c "import cv2; print('OpenCV', cv2.__version__)"
 
 COPY gymkeep_vision ./gymkeep_vision
 # Modelo por defecto (yolo26n) dentro de la imagen: no hay que descargarlo aparte.

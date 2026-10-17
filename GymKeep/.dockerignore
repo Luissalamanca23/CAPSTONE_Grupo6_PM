@@ -1,0 +1,13 @@
+# La imagen de la API solo necesita requirements.txt y app/. Sin esto, Docker envia al motor
+# toda la carpeta (videos de vision/datos, node_modules...) en cada build.
+vision/
+frontend/
+postgres/
+mongo/
+GymKeep_BDD_Completa/
+tests/
+.git/
+.env
+**/__pycache__/
+**/*.pyc
+.pytest_cache/

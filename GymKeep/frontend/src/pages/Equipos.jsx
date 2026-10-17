@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { api } from '../api/client.js'
 import EstadoBadge from '../components/EstadoBadge.jsx'
 import CategoriaEquipoBadge, { CATEGORIAS_EQUIPO } from '../components/CategoriaEquipoBadge.jsx'
+import Paginacion from '../components/Paginacion.jsx'
+import { usePaginacion } from '../utils/paginacion.js'
 import { getSaludEquipo } from '../utils/saludEquipo.js'
 
 const ESTADOS_EQUIPO = ['operativo', 'en_mantenimiento', 'fuera_de_servicio', 'retirado']
@@ -101,6 +103,8 @@ export default function Equipos() {
       return campos.some((campo) => campo && campo.toLowerCase().includes(texto))
     })
   }, [equipos, busqueda, filtroEstado, filtroCategoria])
+
+  const paginacion = usePaginacion(equiposFiltrados, 20, `${busqueda}|${filtroEstado}|${filtroCategoria}`)
 
   async function manejarEnvio(evento) {
     evento.preventDefault()
@@ -302,7 +306,7 @@ export default function Equipos() {
                 </td>
               </tr>
             )}
-            {equiposFiltrados.map((equipo) => {
+            {paginacion.visibles.map((equipo) => {
               const salud = getSaludEquipo(equipo)
               return (
                 <tr key={equipo.id} className={`border-t border-slate-100 border-l-4 ${salud.borde} ${salud.fila}`}>
@@ -363,6 +367,7 @@ export default function Equipos() {
           </tbody>
         </table>
         </div>
+        <Paginacion paginacion={paginacion} />
       </div>
     </div>
   )

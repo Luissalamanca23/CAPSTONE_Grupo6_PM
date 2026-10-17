@@ -21,7 +21,7 @@ flowchart LR
     CAM[Cámara RTSP / video] --> PIPE[Pipeline de visión<br/>vision/]
     PIPE -- "GET configuracion (cada 5 s)" --> API
     PIPE -- "POST vivo (cada 1 s)" --> API
-    PIPE -- "PUT cuadro (cada 2 s)" --> API
+    PIPE -- "PUT cuadro (cada 1 s)" --> API
     PIPE -- "POST /eventos-ia/ (inicio/fin de uso)" --> API
     API[API GymKeep<br/>/api/v1/vision] --> PG[(PostgreSQL<br/>zonas, parámetros,<br/>sesiones_uso)]
     API --> MG[(MongoDB<br/>registro en vivo)]
@@ -50,7 +50,7 @@ En **MongoDB** (base `gymkeep_ai`) las colecciones nuevas se crean solas al prim
 
 | Colección | Qué guarda | Frecuencia y retención |
 |---|---|---|
-| `camaras_vivo` | Un documento por cámara (`_id` = id de la cámara): último estado de cada máquina, personas detectadas y **último cuadro en JPEG** | Se reemplaza cada 1 s (estado) y cada 2 s (imagen) |
+| `camaras_vivo` | Un documento por cámara (`_id` = id de la cámara): último estado de cada máquina, personas detectadas y **último cuadro en JPEG** | Se reemplaza cada 1 s (estado) y cada 1 s (imagen, `--cuadro-cada`) |
 | `detecciones_raw` (ya existía) | Historial de detecciones: caja, confianza, track y máquina de cada persona | Cada 1 s **solo si hay personas**; TTL 7 días |
 | `telemetria_camaras` (ya existía) | Salud del pipeline: fps, latencia, personas, máquinas en uso | Cada 30 s por cámara; TTL 30 días |
 | `fotos_equipos` | Foto de referencia de cada máquina (`_id` = id del equipo) | Al subirla o tomarla de la cámara |
@@ -83,6 +83,7 @@ Documentados en `http://localhost:8000/docs`, sección "Vision (integracion)".
 | `GET /camaras/{id}/vivo` | panel | Último estado, con `en_linea` (falso si no llegan datos hace más de 15 s) y `edad_s` |
 | `PUT /camaras/{id}/cuadro` | pipeline y panel | Imagen (cuerpo JPEG o PNG, máx. 5 MB; se guarda en JPEG de hasta 1280 px). Desde el panel sirve para subir una imagen de referencia y dibujar zonas sin pipeline |
 | `GET /camaras/{id}/cuadro` | panel | Última imagen (`image/jpeg`, sin caché) |
+| `GET /camaras/{id}/stream` | panel | **Video en vivo** (MJPEG, `multipart/x-mixed-replace`): `<img src=".../stream">` y listo; entrega cada cuadro nuevo que sube el pipeline. También se puede abrir directo en el navegador |
 | `GET /maquinas` | panel | Por máquina: `horas_uso` (horómetro), `horas_ultimos_7_dias`, `sesiones`, `ultima_sesion`, `ultima_mantencion`, `horas_desde_mantencion`, `incidencias_abiertas`, `camaras`, `medido_por_camara`, `en_uso_ahora`, `estado_vivo`, `tiene_foto` |
 | `GET /maquinas/{id}` | panel | Historial en una llamada: `resumen`, `uso_diario` (30 días), `sesiones`, `incidencias`, `mantenciones` |
 | `GET` y `PUT /maquinas/{id}/foto` | panel | Foto de referencia (JPEG) |
@@ -118,20 +119,50 @@ cd GymKeep/vision
     --api http://localhost:8000 --camara CAM-01 --sin-video
 ```
 
-O con Docker (CPU, sin GPU), sobre el compose del equipo:
+O con Docker (CPU, sin GPU). **Un solo comando** levanta todo (`docker-compose.vision.yml`
+incluye al `docker-compose.yml`: base de datos, MongoDB, API y pipeline). Si el stack ya estaba
+corriendo, solo agrega el pipeline:
 
 ```bash
 cd GymKeep
-VISION_CAMARA=CAM-01 VISION_FUENTE=rtsp://usuario:clave@ip/stream \
-  docker compose -f docker-compose.yml -f docker-compose.vision.yml up -d --build vision
+docker compose -f docker-compose.vision.yml up -d --build
+docker compose -f docker-compose.vision.yml logs -f vision  # ver qué hace
 ```
+
+Sin visión sigue valiendo el comando de siempre (`docker compose up -d --build`). No combinar los
+dos archivos con `-f`: el de visión ya incluye al principal. Requiere Compose 2.20 o superior.
+
+Sin variables analiza el video de demo `vision/datos/cctv_cintas.mp4` como si fuera la cámara
+`CAM-01` del seed, en tiempo real y en bucle, y deja el video en vivo en el panel
+(`http://localhost:5173/camaras`). Para una cámara real:
+
+```bash
+VISION_CAMARA=CAM-01 VISION_FUENTE=rtsp://usuario:clave@ip/stream VISION_OPCIONES="" VISION_ZONAS="" \
+  docker compose -f docker-compose.vision.yml up -d --build
+```
+
+| Variable | Qué hace | Por defecto |
+|---|---|---|
+| `VISION_CAMARA` | Código de la cámara en GymKeep | `CAM-01` |
+| `VISION_FUENTE` | `rtsp://...` o un video de `vision/datos/` (como `/app/datos/archivo.mp4`) | `/app/datos/cctv_cintas.mp4` |
+| `VISION_OPCIONES` | Opciones extra de `procesar` (`--tiempo-real --repetir` hace que un video actúe como cámara en vivo) | `--tiempo-real --repetir` |
+| `VISION_ZONAS` | JSON con las zonas iniciales de las máquinas; vacío = no aplicar | `/app/config/zonas_cintas.json` |
+| `VISION_CUADRO_CADA_S` | Cada cuántos segundos se sube un cuadro al panel | `1` |
+| `VISION_API` | URL de la API vista desde el contenedor | `http://api:8000` |
+
+Al arrancar, el contenedor espera a que la API responda y aplica **una sola vez** las zonas de
+`vision/config/zonas_cintas.json` (las 3 cintas del video; crea en GymKeep las máquinas EQ-0002 y
+EQ-0014 si faltan). Quedan una marca en el volumen del contenedor: después mandan las zonas que se
+editen en el panel. Para volver a aplicarlas: `docker compose -f docker-compose.vision.yml down -v`
+(o `python -m gymkeep_vision zonas config/zonas_cintas.json --api ... --forzar`).
 
 - `--camara` toma las zonas y los parámetros de la plataforma; el YAML pasa a ser opcional.
 - Para probar sin cámara se puede usar un video puesto en `vision/datos/`:
   - Sin Docker: `--tiempo-real --repetir --inicio "$(date -Iseconds)"` lo hace funcionar como
     una cámara en vivo.
-  - En Docker: `VISION_FUENTE=/app/datos/mi_video.mp4` y
-    `VISION_OPCIONES="--tiempo-real --repetir"` (el compose ya agrega `--inicio`).
+  - En Docker: `VISION_FUENTE=/app/datos/mi_video.mp4` (el compose ya agrega `--tiempo-real
+    --repetir` e `--inicio`). Los videos van en `vision/datos/` y **no se suben a git**: cada
+    integrante debe copiarlo a su carpeta.
 - El envío en vivo corre en un hilo aparte: si la API se cae, el análisis sigue y se reintenta.
 - `docker stop` (o Ctrl+C) cierra las sesiones abiertas antes de salir.
 - La imagen que se envía va sin anotaciones (el panel dibuja las suyas) y con las cabezas
@@ -178,8 +209,10 @@ Propuesta: dos secciones nuevas en el menú, "Uso de máquinas" y "Cámaras".
 ### 7.4 Vista de una cámara: `GET /vision/camaras/{id}` + `GET .../vivo`
 
 - **Imagen en vivo**:
-  - Si `en_linea`, refrescarla cada ~1,5 s. Conviene precargar la siguiente con `new Image()`
-    y cambiarla al cargar, para que no parpadee.
+  - Si `en_linea`, mostrar el stream: `<img src="/vision/camaras/{id}/stream">` (MJPEG; el
+    navegador renueva el cuadro solo). Al dibujar o editar zonas la imagen se queda quieta, y si
+    el stream falla (`onError`) se vuelve a pedir `GET .../cuadro` cada ~1 s precargando con
+    `new Image()` para que no parpadee. Sin pipeline se ve la última imagen guardada.
   - Encima, las zonas coloreadas según su estado, con un rótulo y el cronómetro.
   - También las cajas de las personas: sólida si `equipo_id` no es nulo, punteada si no.
   - Si hay muchas zonas juntas, abreviar los rótulos y evitar que se salgan por el borde.
@@ -258,7 +291,9 @@ curl -X PUT localhost:8000/api/v1/vision/camaras/2/maquinas/1 -H 'Content-Type: 
 | `app/api/v1/vision.py`, `app/schemas/vision.py`, `app/services/vision_service.py` | Endpoints, contratos y lógica |
 | `app/api/v1/router.py` | Registra `/vision` |
 | `tests/test_vision_api.py` | Tests de la API |
+| `app/services/mjpeg.py` | Flujo MJPEG del video en vivo (`GET /camaras/{id}/stream`) |
 | `vision/gymkeep_vision/vivo.py` | Envío en vivo y relectura de configuración |
+| `vision/gymkeep_vision/preset.py`, `vision/config/zonas_cintas.json` | Zonas iniciales de las cintas del video de demo y espera a la API |
 | `vision/gymkeep_vision/pipeline.py`, `config.py`, `__main__.py` | `--camara`, `--tiempo-real`, `--repetir`, estado en vivo y zonas en caliente |
-| `vision/tests/test_vivo.py` | Tests del modo en vivo |
+| `vision/tests/test_vivo.py`, `vision/tests/test_preset.py`, `tests/test_mjpeg.py` | Tests del modo en vivo, de las zonas iniciales y del stream |
 | `docker-compose.vision.yml`, `vision/Dockerfile`, `vision/.dockerignore` | Pipeline en Docker |
