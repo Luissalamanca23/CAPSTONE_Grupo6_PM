@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -15,8 +15,8 @@ router = APIRouter()
 def listar_sesiones_uso(
     equipo_id: Optional[int] = None,
     estado: Optional[str] = None,
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     """Sesiones de uso de los equipos (mas recientes primero). Las genera el modulo de

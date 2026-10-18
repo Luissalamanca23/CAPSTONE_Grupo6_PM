@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +27,25 @@ class Settings(BaseSettings):
     s3_secret_key: str = "gymkeep_minio_password"
     s3_bucket: str = "gymkeep-evidencias"
     s3_region: str = "us-east-1"
+
+    # PIN numerico (4 a 6 digitos) para editar zonas y parametros del modulo de vision desde el
+    # panel. Vacio = edicion libre (desarrollo). Ver app/core/pin.py.
+    vision_pin: str = ""
+
+    # Clave compartida entre la API y el pipeline de vision (cabecera X-Pipeline-Key). Protege los
+    # endpoints que solo usa el pipeline. Vacia = abiertos (desarrollo). Ver app/core/pipeline_key.py.
+    vision_pipeline_key: str = ""
+
+    # Cada cuantos segundos la API revisa y cierra sesiones de uso huerfanas (0 = desactivado).
+    vision_watchdog_s: int = 60
+
+    @field_validator("vision_pin")
+    @classmethod
+    def _pin_valido(cls, valor: str) -> str:
+        valor = valor.strip()
+        if valor and not (valor.isdigit() and 4 <= len(valor) <= 6):
+            raise ValueError("VISION_PIN debe tener entre 4 y 6 digitos")
+        return valor
 
 
 settings = Settings()

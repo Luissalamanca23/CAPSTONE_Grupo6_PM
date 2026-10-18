@@ -8,7 +8,7 @@ area de su caja. Asi una misma persona no suma uso a dos maquinas vecinas (§6.6
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
@@ -21,6 +21,8 @@ class Deteccion:
     bbox: tuple[float, float, float, float]  # x1, y1, x2, y2 en pixeles
     confianza: float
     track_id: int | None = None
+    # Con un modelo de pose: 17 puntos COCO (x, y, confianza) en pixeles. Ver actividad.py.
+    puntos: tuple | None = field(default=None, compare=False, repr=False)
 
     def ancla(self, criterio: str) -> tuple[float, float]:
         x1, y1, x2, y2 = self.bbox

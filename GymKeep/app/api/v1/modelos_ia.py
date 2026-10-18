@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -9,7 +9,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=list[ModeloIAOut])
-def listar_modelos_ia(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def listar_modelos_ia(skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db)):
     """Versiones de modelos de IA registradas (para trazabilidad de que modelo genero
     cada evento/incidencia por IA)."""
     return crud_modelo_ia.list_modelos_ia(db, skip=skip, limit=limit)

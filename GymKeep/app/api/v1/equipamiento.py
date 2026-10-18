@@ -2,7 +2,7 @@ import io
 from typing import Optional
 
 import qrcode
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -42,7 +42,7 @@ def crear_equipo(equipo_in: EquipoCreate, db: Session = Depends(get_db)):
 
 @router.get("/", response_model=list[EquipoOut])
 def listar_equipos(
-    sucursal_id: Optional[int] = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
+    sucursal_id: Optional[int] = None, skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db)
 ):
     """Lista los equipos registrados, con paginacion simple y filtro opcional por sucursal."""
     return crud_equipamiento.list_equipos(db, skip=skip, limit=limit, sucursal_id=sucursal_id)

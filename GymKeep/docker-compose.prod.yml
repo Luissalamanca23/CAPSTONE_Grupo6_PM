@@ -1,0 +1,52 @@
+# Override para produccion, sobre docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Requiere Docker Compose >= 2.24 (usa las etiquetas !override y !reset).
+#
+# Diferencias con el compose de desarrollo:
+# - La API usa el codigo de la imagen (no se monta ./app) y arranca sin --reload.
+# - Postgres y Mongo solo escuchan en 127.0.0.1 del servidor (no quedan expuestos).
+# - Las claves no tienen valor por defecto: si falta alguna, compose falla con un mensaje.
+#   Definelas en un .env junto a este archivo o como variables de entorno.
+
+services:
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en el .env}
+    ports: !override
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+
+  mongo:
+    environment:
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Define MONGO_ROOT_PASSWORD en el .env}
+    ports: !override
+      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "--username",
+          "${MONGO_ROOT_USER:-gymkeep}",
+          "--password",
+          "${MONGO_ROOT_PASSWORD:?Define MONGO_ROOT_PASSWORD en el .env}",
+          "--authenticationDatabase",
+          "admin",
+          "--eval",
+          "db.adminCommand('ping')",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  api:
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-gymkeep}:${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en el .env}@db:5432/${POSTGRES_DB:-gymkeep}
+      MONGO_URL: mongodb://${MONGO_ROOT_USER:-gymkeep}:${MONGO_ROOT_PASSWORD:?Define MONGO_ROOT_PASSWORD en el .env}@mongo:27017/?authSource=admin
+      FRONTEND_URL: ${FRONTEND_URL:?Define FRONTEND_URL (origen del panel, para CORS) en el .env}
+      VISION_PIN: ${VISION_PIN:?Define VISION_PIN (PIN para editar zonas y parametros de vision) en el .env}
+      VISION_PIPELINE_KEY: ${VISION_PIPELINE_KEY:?Define VISION_PIPELINE_KEY (clave del pipeline de vision) en el .env}
+    volumes: !reset []
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

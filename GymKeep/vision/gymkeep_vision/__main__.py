@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -19,8 +20,12 @@ from gymkeep_vision.config import RAIZ
 ZONA_HORARIA = ZoneInfo("America/Santiago")
 
 
-def _cliente(url: str) -> httpx.Client:
-    return httpx.Client(base_url=url.rstrip("/"), timeout=10)
+def _cliente(url: str, clave: str | None = None) -> httpx.Client:
+    """Cliente de la API. Con clave del pipeline (`--clave-pipeline` o la variable de entorno
+    VISION_PIPELINE_KEY) la envia en `X-Pipeline-Key` en TODAS las llamadas."""
+    clave = clave or os.environ.get("VISION_PIPELINE_KEY")
+    cabeceras = {"X-Pipeline-Key": clave} if clave else {}
+    return httpx.Client(base_url=url.rstrip("/"), timeout=10, headers=cabeceras)
 
 
 def cmd_procesar(args) -> int:
@@ -30,7 +35,7 @@ def cmd_procesar(args) -> int:
 
     from gymkeep_vision import vivo
 
-    cliente = _cliente(args.api) if args.api else None
+    cliente = _cliente(args.api, args.clave_pipeline) if args.api else None
     if cliente is not None:
         from gymkeep_vision import preset
 
@@ -60,6 +65,11 @@ def cmd_procesar(args) -> int:
     cfg = cfg.con_parametros(
         t_on_s=args.t_on, t_off_s=args.t_off, confianza_min=args.confianza, escala_tiempo=args.escala_tiempo
     )
+    cfg = _aplicar_rendimiento(cfg, args)
+    if args.actividad:
+        cfg = cfg.con_actividad()
+    if cfg.actividad:
+        logging.info("Actividad por pose: %s (umbral %.2f)", cfg.modelo.pesos, cfg.actividad.umbral)
     inicio, origen_inicio = tiempo.resolver_inicio(args.video, args.inicio, ZONA_HORARIA)
     logging.info("Hora del primer cuadro: %s (%s)", tiempo.hora(inicio), origen_inicio)
     if Path(args.video).exists() and origen_inicio != tiempo.ORIGEN_ARGUMENTO:
@@ -75,7 +85,9 @@ def cmd_procesar(args) -> int:
     api = None
     if args.api:
         resolver_ids(cliente, cfg, registrar=args.registrar)
-        api = DestinoAPI(cliente)
+        # Lo que la API no alcance a recibir queda en eventos_pendientes.jsonl y se reintenta
+        # al volver a arrancar con la misma carpeta de salida.
+        api = DestinoAPI(cliente, ruta_pendientes=salida / "eventos_pendientes.jsonl")
         destinos.append(api)
         logging.info(
             "GymKeep: camara %s -> id %s; equipos %s",
@@ -112,12 +124,10 @@ def cmd_procesar(args) -> int:
     print(reporte.imprimir(resumen))
     print(f"\nResultados en: {salida}")
     if api is not None:
-        print(f"Eventos enviados a GymKeep: {api.enviados} (fallidos: {len(api.fallidos)})")
-        if api.fallidos:
-            with (salida / "eventos_pendientes.jsonl").open("w", encoding="utf-8") as f:
-                for evento in api.fallidos:
-                    f.write(json.dumps(evento, ensure_ascii=False) + "\n")
-            print("Los fallidos quedaron en eventos_pendientes.jsonl (reenviar con el comando 'enviar').")
+        print(f"Eventos enviados a GymKeep: {api.enviados} (pendientes: {api.pendientes}, rechazados: {len(api.fallidos)})")
+        if api.pendientes:
+            print("Los pendientes quedaron en eventos_pendientes.jsonl: se reintentan al volver a procesar con la misma "
+                  "carpeta de salida, o con el comando 'enviar'.")
     return 0
 
 
@@ -129,7 +139,11 @@ def cmd_zonas(args) -> int:
     if marca is not None and marca.exists() and not args.forzar:
         logging.info("Las zonas iniciales ya se aplicaron antes (%s); se respetan las del panel", marca)
         return 0
-    cliente = _cliente(args.api)
+    cliente = _cliente(args.api, args.clave_pipeline)
+    # Guardar las zonas pide el PIN de edicion si la API lo tiene configurado (VISION_PIN).
+    pin = args.pin or os.environ.get("VISION_PIN")
+    if pin:
+        cliente.headers["X-Vision-Pin"] = pin
     preset.esperar_api(cliente, args.esperar_api)
     datos = preset.leer_preset(Path(args.preset))
     camara = vivo.buscar_camara(cliente, args.camara or datos["camara"])
@@ -146,14 +160,14 @@ def cmd_enviar(args) -> int:
     from gymkeep_vision.eventos import DestinoAPI, completar_ids, resolver_ids
 
     cfg = config_mod.cargar(args.config)
-    cliente = _cliente(args.api)
+    cliente = _cliente(args.api, args.clave_pipeline)
     resolver_ids(cliente, cfg, registrar=args.registrar)
     eventos = [json.loads(l) for l in Path(args.eventos).read_text(encoding="utf-8").splitlines() if l.strip()]
     eventos.sort(key=lambda e: (e["metadata"]["t_emision_s"], e["metadata"]["t_s"]))
     api = DestinoAPI(cliente)
     sesiones = set()
     for evento in eventos:
-        respuesta = api.enviar(completar_ids(evento, cfg))
+        respuesta = api.enviar_ahora(completar_ids(evento, cfg))
         if respuesta and respuesta.get("sesion_uso_id"):
             sesiones.add(respuesta["sesion_uso_id"])
     print(f"Enviados {api.enviados}/{len(eventos)} eventos; sesiones de uso tocadas en GymKeep: {len(sesiones)}")
@@ -214,6 +228,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--api", help="URL de la API GymKeep (ej. http://localhost:8000) para enviar eventos en vivo")
     p.add_argument("--registrar", action="store_true", help="crea en GymKeep la camara/equipos/modelo que falten")
     p.add_argument(
+        "--clave-pipeline",
+        help="clave del pipeline (cabecera X-Pipeline-Key); por defecto la variable de entorno VISION_PIPELINE_KEY",
+    )
+    p.add_argument(
         "--camara",
         help="codigo de la camara en GymKeep: toma zonas y parametros de la plataforma y publica en vivo (requiere --api)",
     )
@@ -237,6 +255,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--estado-cada", type=float, default=1.0, metavar="S", help="cada cuantos segundos informa el estado de las maquinas")
     p.add_argument("--sin-video", action="store_true", help="no genera el video anotado (mas rapido)")
     p.add_argument("--mostrar", action="store_true", help="muestra el video anotado en una ventana (Q para salir)")
+    p.add_argument("--perfil", choices=sorted(PERFILES), help="combinacion probada de rendimiento (rpi: Raspberry Pi 5)")
+    p.add_argument("--intervalo", type=float, help="segundos entre analisis (0.2 = 5 por segundo)")
+    p.add_argument("--imgsz", type=int, help="tamano de imagen para YOLO (640, 480...)")
+    p.add_argument("--movimiento", action="store_true", help="corre YOLO solo si algo cambio cerca de las maquinas")
+    p.add_argument("--ncnn", action="store_true", help="usa el modelo en formato NCNN (rapido en CPU ARM)")
+    p.add_argument(
+        "--actividad",
+        action="store_true",
+        help="mide la actividad con un modelo de pose: quien esta encima sin entrenar no cuenta como uso",
+    )
     p.set_defaults(func=cmd_procesar)
 
     p = sub.add_parser("zonas", help="aplica a una camara las zonas de un JSON (config/zonas_cintas.json)")
@@ -244,6 +272,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--api", required=True)
     p.add_argument("--camara", help="codigo de la camara (por defecto, el del JSON)")
     p.add_argument("--esperar-api", type=float, default=0.0, metavar="S")
+    p.add_argument("--pin", help="PIN de edicion de la API (por defecto la variable VISION_PIN)")
+    p.add_argument("--clave-pipeline", help="clave del pipeline (por defecto VISION_PIPELINE_KEY)")
     p.add_argument("--marca", help="archivo que recuerda que ya se aplicaron (no se repite aunque se reinicie)")
     p.add_argument("--forzar", action="store_true", help="aplicar aunque exista la marca (pisa lo editado en el panel)")
     p.add_argument("--sin-crear", action="store_true", help="no crear los equipos que falten en GymKeep")
@@ -254,6 +284,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("-c", "--config", required=True)
     p.add_argument("--api", required=True)
     p.add_argument("--registrar", action="store_true")
+    p.add_argument("--clave-pipeline", help="clave del pipeline (por defecto VISION_PIPELINE_KEY)")
     p.set_defaults(func=cmd_enviar)
 
     p = sub.add_parser("recalibrar", help="prueba parametros sobre presencia.csv de una corrida (sin YOLO)")
@@ -281,7 +312,70 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s", datefmt="%H:%M:%S")
+    _limitar_hilos(os.environ.get("VISION_HILOS"))
     return args.func(args)
+
+
+# Perfiles de rendimiento: combinaciones probadas para un tipo de equipo. Las opciones sueltas
+# (--intervalo, --imgsz, --movimiento, --ncnn) se aplican despues y ganan sobre el perfil.
+PERFILES = {
+    # Raspberry Pi 5 / notebook sin GPU: 2.5 analisis/s (T_on es 30 s y la actividad mira 4 s),
+    # YOLO solo si algo se movio cerca de las maquinas, y NCNN (lo mas rapido en CPU ARM).
+    # Se mantienen 640 px: a 480 la pose de las personas lejanas sale tan chica que parecen
+    # quietas y se pierde su uso (medido: una maquina del fondo paso de 4 min de uso a 0).
+    "rpi": {"intervalo": 0.4, "movimiento": True, "ncnn": True},
+}
+
+
+def _aplicar_rendimiento(cfg, args):
+    from dataclasses import replace
+
+    from gymkeep_vision.movimiento import ParametrosMovimiento
+
+    opciones = dict(PERFILES.get(args.perfil or "", {}))
+    opciones.update({k: v for k, v in {
+        "intervalo": args.intervalo, "imgsz": args.imgsz, "movimiento": args.movimiento or None, "ncnn": args.ncnn or None,
+    }.items() if v is not None})
+    if not opciones:
+        return cfg
+    modelo = cfg.modelo
+    if opciones.get("imgsz"):
+        modelo = replace(modelo, imgsz=opciones["imgsz"])
+    if opciones.get("ncnn"):
+        modelo = replace(modelo, formato="ncnn")
+    cfg = replace(
+        cfg,
+        modelo=modelo,
+        intervalo_analisis_s=opciones.get("intervalo", cfg.intervalo_analisis_s),
+        movimiento=ParametrosMovimiento() if opciones.get("movimiento") else cfg.movimiento,
+    )
+    logging.info(
+        "Rendimiento: %.1f analisis/s, %d px, %s, %s",
+        1 / cfg.intervalo_analisis_s, modelo.imgsz, modelo.formato,
+        "YOLO solo con movimiento" if cfg.movimiento else "YOLO en cada analisis",
+    )
+    return cfg
+
+
+def _limitar_hilos(valor: str | None) -> None:
+    """Con varias camaras en el mismo equipo, cada pipeline usa por defecto tantos hilos como
+    nucleos (PyTorch, OpenCV y el decodificador de video) y se estorban entre si. VISION_HILOS
+    fija ese numero por pipeline (ej. 2); sin la variable se deja el comportamiento por defecto.
+
+    Ademas, los hilos de OpenMP esperan dormidos (OMP_WAIT_POLICY=PASSIVE): por defecto giran
+    activos esperando trabajo y, con varios pipelines en el mismo equipo, se bloquean entre
+    si (medido: 35 ms por cuadro con espera pasiva frente a 6 s con espera activa, 6 camaras)."""
+    if not valor:
+        return
+    hilos = max(1, int(valor))
+    os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")  # antes de importar torch
+    os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", f"threads;{hilos}")
+    import cv2
+    import torch
+
+    cv2.setNumThreads(hilos)
+    torch.set_num_threads(hilos)
+    logging.getLogger(__name__).info("Hilos por pipeline: %d", hilos)
 
 
 if __name__ == "__main__":

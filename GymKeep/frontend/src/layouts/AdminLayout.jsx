@@ -34,13 +34,15 @@ const ICONOS = {
   ),
   uso: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5 shrink-0">
-      <path d="M3 12h4l3-8 4 16 3-8h4" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="13" r="8" />
+      <path d="M12 9v4l2.5 2.5" />
+      <path d="M9.5 2.5h5" />
     </svg>
   ),
   camaras: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5 shrink-0">
-      <rect x="2.5" y="6" width="13" height="12" rx="2" />
-      <path d="m15.5 10.5 6-3v9l-6-3" strokeLinejoin="round" />
+      <rect x="2.5" y="6.5" width="13" height="11" rx="2" />
+      <path d="m15.5 10.5 6-3.5v10l-6-3.5" />
     </svg>
   ),
   sucursales: (

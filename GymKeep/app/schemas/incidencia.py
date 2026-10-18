@@ -27,9 +27,9 @@ class IncidenciaCreate(BaseModel):
     autocompletan a partir de la prioridad_base del tipo de falla."""
 
     equipo_id: int
-    tipo_falla_codigo: str
-    descripcion: Optional[str] = None
-    reportado_por: Optional[str] = None
+    tipo_falla_codigo: str = Field(max_length=50)
+    descripcion: Optional[str] = Field(default=None, max_length=1000)
+    reportado_por: Optional[str] = Field(default=None, max_length=80)
     prioridad: Optional[PrioridadIncidencia] = None
     origen: OrigenIncidencia = OrigenIncidencia.tecnico
 
@@ -40,8 +40,8 @@ class IncidenciaCreateByQR(BaseModel):
     funcionando, y escribe su nombre (unico campo de texto libre). La prioridad final se
     deriva de `gravedad` y `funcional`, no solo de la prioridad_base del catalogo."""
 
-    token: str = Field(description="Token UUID del QR activo del equipo (viene en la URL escaneada).")
-    tipo_falla_codigo: str
+    token: str = Field(max_length=64, description="Token UUID del QR activo del equipo (viene en la URL escaneada).")
+    tipo_falla_codigo: str = Field(max_length=50)
     gravedad: Literal["leve", "grave"] = Field(
         description="Que tan grave le parecio la falla a quien reporta: leve -> prioridad baja, grave -> alta."
     )
@@ -50,9 +50,10 @@ class IncidenciaCreateByQR(BaseModel):
         description="Si la maquina sigue pudiendo usarse. En False: prioridad urgente y el "
         "equipo pasa a estado 'fuera_de_servicio' automaticamente.",
     )
-    reportado_por: str = Field(min_length=1, description="Nombre de quien reporta; unico campo de texto libre.")
+    reportado_por: str = Field(min_length=1, max_length=80, description="Nombre de quien reporta; unico campo de texto libre.")
     descripcion: Optional[str] = Field(
         default=None,
+        max_length=1000,
         description="Texto libre opcional. Solo lo pide el formulario cuando la categoria elegida es "
         "'otro' (no hay un tipo de falla especifico que elegir, asi que se le pide describirlo).",
     )

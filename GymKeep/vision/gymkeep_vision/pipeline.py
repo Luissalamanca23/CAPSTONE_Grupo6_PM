@@ -10,11 +10,11 @@ Los eventos se escriben en `eventos.jsonl` y, si hay API, se envian a GymKeep.
 
 from __future__ import annotations
 
-import csv
 import logging
 import shutil
 import subprocess
 import time
+from collections import deque
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -22,13 +22,21 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from gymkeep_vision import tiempo
+from gymkeep_vision import rostros, tiempo
+from gymkeep_vision.actividad import MedidorActividad
+from gymkeep_vision.movimiento import DetectorMovimiento
+from gymkeep_vision.captura import LectorVivo
 from gymkeep_vision.config import Config, ConfigMaquina
 from gymkeep_vision.eventos import construir_evento
+from gymkeep_vision.registro import RegistroPresencia
 from gymkeep_vision.sesiones import Estado, MonitorMaquina, Observacion
 from gymkeep_vision.zonas import Deteccion, ZonaMaquina, asignar
 
 log = logging.getLogger(__name__)
+
+# En una camara en vivo (24/7) `Resultado.eventos` guarda solo los ultimos eventos: el
+# historial completo esta en eventos.jsonl y en la API.
+MAX_EVENTOS_VIVO = 1000
 
 # Colores BGR por estado de la maquina.
 COLORES = {
@@ -36,12 +44,14 @@ COLORES = {
     Estado.CANDIDATA: (40, 190, 240),
     Estado.EN_USO: (60, 60, 230),
     Estado.PAUSA: (40, 140, 250),
+    Estado.OCUPADA: (170, 120, 150),
 }
 ETIQUETAS = {
     Estado.LIBRE: "LIBRE",
     Estado.CANDIDATA: "DETECTANDO",
     Estado.EN_USO: "EN USO",
     Estado.PAUSA: "PAUSA",
+    Estado.OCUPADA: "OCUPADA SIN USO",
 }
 
 
@@ -58,7 +68,7 @@ class Resultado:
     fuente: str
     inicio_video: datetime
     monitores: dict[str, MonitorMaquina]
-    eventos: list[dict] = field(default_factory=list)
+    eventos: list[dict] | deque = field(default_factory=list)
     t_inicio_s: float = 0.0
     t_final_s: float = 0.0
     cuadros_analizados: int = 0
@@ -86,8 +96,16 @@ class Pipeline:
         repetir: bool = False,
     ):
         self.cfg = cfg
+        # Actividad por pose (actividad.py): solo si la config la pide.
+        self.medidor = MedidorActividad(cfg.actividad) if cfg.actividad else None
+        # Saltar YOLO cuando la escena no cambia (movimiento.py): solo si la config lo pide.
+        self.movimiento = DetectorMovimiento(cfg.movimiento) if cfg.movimiento else None
+        self._ultimas_detecciones: list[Deteccion] = []
+        self._activa: dict = {}
         # Conexion en vivo con la plataforma (vivo.PublicadorVivo), opcional.
         self.publicador = publicador
+        # Rostros que YOLO no detecta como persona (muy cerca o cortados por el borde).
+        self.detector_rostros = rostros.crear() if cfg.difuminar_personas else None
         # Un archivo se analiza al ritmo del reloj (como una camara en vivo) y, con repetir,
         # vuelve a empezar al terminar: sirve para mostrar la integracion sin camara real.
         self.tiempo_real = tiempo_real
@@ -109,6 +127,7 @@ class Pipeline:
             for m in cfg.maquinas
         ]
         self.monitores = {m.nombre: MonitorMaquina(cfg.uso) for m in cfg.maquinas}
+        self._sin_senal = False  # camara en vivo: ya se cerraron las sesiones por falta de cuadros
 
     # ------------------------------------------------------------------ ejecucion
 
@@ -116,7 +135,11 @@ class Pipeline:
         from ultralytics import YOLO  # import tardio: los tests no necesitan torch
 
         es_archivo = Path(self.fuente).exists()
-        captura = cv2.VideoCapture(int(self.fuente) if self.fuente.isdigit() else self.fuente)
+
+        def abrir() -> cv2.VideoCapture:
+            return cv2.VideoCapture(int(self.fuente) if self.fuente.isdigit() else self.fuente)
+
+        captura = abrir()
         if not captura.isOpened():
             raise RuntimeError(f"No se pudo abrir la fuente de video: {self.fuente}")
 
@@ -138,11 +161,15 @@ class Pipeline:
             indice = int(self.desde_s * fps)
             captura.set(cv2.CAP_PROP_POS_FRAMES, indice)
 
-        modelo = YOLO(self.cfg.modelo.ruta_pesos())
+        modelo = YOLO(self.cfg.modelo.ruta_modelo(), task=self.cfg.modelo.tarea)
         self.salida.mkdir(parents=True, exist_ok=True)
         (self.salida / "evidencias").mkdir(exist_ok=True)
         resultado = Resultado(self.cfg, self.fuente, self.inicio_video, self.monitores)
         resultado.t_inicio_s = self.desde_s * escala if es_archivo else 0.0
+        # Una camara no termina: si deja de entregar cuadros se reabre la conexion en vez de salir.
+        lector = None if es_archivo else LectorVivo(abrir, captura)
+        if not es_archivo:
+            resultado.eventos = deque(maxlen=MAX_EVENTOS_VIVO)
 
         # Reloj del video anotado: cada cuadro escrito representa `periodo` segundos reales,
         # asi la hora impresa avanza al ritmo real al reproducirlo (aunque el archivo venga
@@ -162,9 +189,8 @@ class Pipeline:
                 str(ruta_video_tmp), cv2.VideoWriter_fourcc(*"mp4v"), 1 / periodo, self._tam_dibujo
             )
 
-        archivo_presencia = (self.salida / "presencia.csv").open("w", newline="", encoding="utf-8")
-        presencia = csv.writer(archivo_presencia)
-        presencia.writerow(["t_s", "timestamp", "maquina", "personas", "confianza_max", "estado"])
+        # En vivo, presencia.csv rota por dia y tamano para no crecer sin tope.
+        presencia = RegistroPresencia(self.salida / "presencia.csv", rotar=not es_archivo)
 
         t0_reloj = time.monotonic()
         t_ultimo_vivo = -1e9
@@ -179,7 +205,18 @@ class Pipeline:
                         continue
                     ok = False
                 else:
-                    ok, cuadro = captura.read()
+                    ok, cuadro = captura.read() if es_archivo else lector.leer()
+                if not ok and not es_archivo:
+                    # Sin cuadros: no se inventa presencia ni ausencia; solo si el corte dura
+                    # mas de t_off_s se cierran las sesiones (motivo 'sin_senal').
+                    t = time.monotonic() - t0_reloj
+                    self._vigilar_senal(lector, t, resultado)
+                    if self.max_segundos is not None and t > self.max_segundos:
+                        break
+                    time.sleep(0.1)
+                    continue
+                if ok:
+                    self._sin_senal = False
                 if not ok:
                     if self.repetir and es_archivo and resultado.cuadros_analizados:
                         captura.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -201,7 +238,13 @@ class Pipeline:
                     break
 
                 inicio_computo = time.perf_counter()
-                detecciones = self._detectar(modelo, cuadro)
+                if self.movimiento is None or self.movimiento.hay_que_analizar(t, cuadro):
+                    detecciones = self._ultimas_detecciones = self._detectar(modelo, cuadro)
+                    activa = self._activa = self.medidor.actualizar(t, detecciones) if self.medidor else {}
+                else:
+                    # Nada cambio: mismas personas y misma actividad. No se le pasan al medidor
+                    # muestras repetidas, que lo harian ver quieta a quien entrena.
+                    detecciones, activa = self._ultimas_detecciones, self._activa
                 # Se asignan todas las detecciones y despues se filtra por confianza_min: asi
                 # presencia.csv guarda la confianza aunque no llegue al umbral, y el comando
                 # `recalibrar` puede probar otros umbrales sin volver a correr YOLO.
@@ -222,10 +265,11 @@ class Pipeline:
                         personas=len(dets),
                         confianza=max((d.confianza for d in dets), default=None),
                         track_ids=tuple(d.track_id for d in dets if d.track_id is not None),
+                        activas=self._contar_activas(dets, activa),
                     )
                     monitor = self.monitores[zona.nombre]
                     pendientes += [(ev, zona.nombre, dets) for ev in monitor.actualizar(obs)]
-                    presencia.writerow(
+                    presencia.escribir(
                         [
                             f"{t:.2f}",
                             self._timestamp(t),
@@ -235,9 +279,13 @@ class Pipeline:
                             monitor.estado.value,
                         ]
                     )
-                # Se dibuja despues de actualizar, para que la evidencia de un inicio_uso ya
-                # muestre la maquina EN USO.
-                anotado = self._anotar(cuadro, detecciones, asignadas, t)
+                # Dibujar y buscar rostros cuesta: solo se hace si alguien lo va a usar (video,
+                # ventana, evidencia de un inicio_uso o cuadro para el panel). Se dibuja
+                # despues de actualizar, para que la evidencia ya muestre la maquina EN USO.
+                para_panel = self.publicador is not None and self.publicador.necesita_cuadro()
+                dibujar = escritor is not None or self.mostrar or any(ev.tipo == "inicio_uso" for ev, _, _ in pendientes)
+                caras = self._buscar_rostros(cuadro) if dibujar or para_panel else []
+                anotado = self._anotar(cuadro, detecciones, asignadas, t, caras) if dibujar else None
                 for ev, nombre, dets in pendientes:
                     self._emitir(ev, nombre, dets, anotado, resultado)
 
@@ -246,7 +294,7 @@ class Pipeline:
                         escritor.write(anotado)
                         escritos += 1
                 if self.publicador is not None:
-                    jpeg = self._cuadro_para_panel(cuadro, detecciones) if self.publicador.necesita_cuadro() else None
+                    jpeg = self._cuadro_para_panel(cuadro, detecciones, caras) if para_panel else None
                     fps_analisis = resultado.cuadros_analizados / max(1e-6, time.monotonic() - t0_reloj)
                     self.publicador.publicar(self._estado_vivo(t, detecciones, asignadas, latencia, fps_analisis), jpeg)
                     nueva = self.publicador.tomar_config_nueva()
@@ -270,13 +318,22 @@ class Pipeline:
             resultado.interrumpido = True
             log.warning("Interrumpido: se cierran las sesiones abiertas")
         finally:
+            if self.movimiento is not None and self.movimiento.analizados:
+                total = self.movimiento.analizados + self.movimiento.omitidos
+                log.info(
+                    "YOLO corrio en %d de %d analisis (%.0f %% sin movimiento cerca de las maquinas)",
+                    self.movimiento.analizados, total, 100 * self.movimiento.omitidos / total,
+                )
             motivo = "interrumpido" if resultado.interrumpido else "fin_de_video"
             for nombre, monitor in self.monitores.items():
                 for ev in monitor.finalizar(t, motivo):
                     self._emitir(ev, nombre, [], None, resultado)
             resultado.t_final_s = t
-            captura.release()
-            archivo_presencia.close()
+            if lector is not None:
+                lector.liberar()
+            else:
+                captura.release()
+            presencia.cerrar()
             if escritor is not None:
                 escritor.release()
                 resultado.video_salida = _recodificar_h264(ruta_video_tmp, self.salida / "video_anotado.mp4")
@@ -294,12 +351,30 @@ class Pipeline:
                     zona.escalar(ancho / ref_ancho, alto / ref_alto)
         for zona in self.zonas:
             zona.preparar(alto, ancho)
+        if self.movimiento is not None:
+            self.movimiento.preparar([zona.poligono for zona in self.zonas], ancho, alto)
             x_min, y_min = zona.poligono.min(axis=0)
             x_max, y_max = zona.poligono.max(axis=0)
             if x_min <= 2 or y_min <= 2 or x_max >= ancho - 3 or y_max >= alto - 3:
                 # Una maquina en el borde queda cortada: la persona encima se detecta mal y
                 # el uso se subestima. La solucion es mover la camara, no bajar umbrales.
                 log.warning("La ROI de '%s' toca el borde del cuadro: su uso puede quedar subestimado", zona.nombre)
+
+    def _buscar_rostros(self, cuadro: np.ndarray) -> list:
+        if self.detector_rostros is None or not self.cfg.difuminar_personas:
+            return []
+        return self.detector_rostros.detectar(cuadro)
+
+    def _vigilar_senal(self, lector: LectorVivo, t: float, resultado: Resultado) -> None:
+        """Camara en vivo sin cuadros: pasados t_off_s segundos se cierran las sesiones
+        abiertas con motivo 'sin_senal' (una sola vez por corte)."""
+        if self._sin_senal or lector.sin_senal_s() <= self.cfg.uso.t_off_s:
+            return
+        self._sin_senal = True
+        log.warning("Sin senal de la camara hace %.0f s: se cierran las sesiones abiertas", lector.sin_senal_s())
+        for nombre, monitor in self.monitores.items():
+            for ev in monitor.finalizar(t, "sin_senal"):
+                self._emitir(ev, nombre, [], None, resultado)
 
     def _detectar(self, modelo, cuadro: np.ndarray) -> list[Deteccion]:
         m = self.cfg.modelo
@@ -317,10 +392,23 @@ class Pipeline:
         if cajas is None or len(cajas) == 0:
             return []
         ids = cajas.id.int().tolist() if cajas.id is not None else [None] * len(cajas)
+        puntos = res.keypoints.data.tolist() if getattr(res, "keypoints", None) is not None else [None] * len(cajas)
         return [
-            Deteccion(bbox=tuple(float(v) for v in xyxy), confianza=float(conf), track_id=tid)
-            for xyxy, conf, tid in zip(cajas.xyxy.tolist(), cajas.conf.tolist(), ids)
+            Deteccion(
+                bbox=tuple(float(v) for v in xyxy),
+                confianza=float(conf),
+                track_id=tid,
+                puntos=tuple(map(tuple, kp)) if kp is not None else None,
+            )
+            for xyxy, conf, tid, kp in zip(cajas.xyxy.tolist(), cajas.conf.tolist(), ids, puntos)
         ]
+
+    def _contar_activas(self, dets: list[Deteccion], activa: dict) -> int | None:
+        """Personas activas en una zona, o None si no se mide la actividad. Una persona de
+        actividad desconocida (recien aparecida, sin puntos) cuenta como activa."""
+        if self.medidor is None:
+            return None
+        return sum(1 for d in dets if activa.get(id(d)) is not False)
 
     def _timestamp(self, t: float) -> str:
         """Hora real del instante `t` para registrar (ISO 8601 con milisegundos)."""
@@ -379,6 +467,10 @@ class Pipeline:
             for d in detecciones
             if d.confianza >= self.cfg.confianza_min
         ]
+        if self.medidor is not None:  # solo si se mide: si no, el formato queda como siempre
+            activa = {id(d): self._activa.get(id(d)) for d in detecciones}
+            for persona, d in zip(personas, [d for d in detecciones if d.confianza >= self.cfg.confianza_min]):
+                persona["activa"] = activa[id(d)]
         maquinas = []
         for zona in self.zonas:
             maquina, monitor = self.maquinas[zona.nombre], self.monitores[zona.nombre]
@@ -406,12 +498,12 @@ class Pipeline:
             "personas": personas,
         }
 
-    def _cuadro_para_panel(self, cuadro: np.ndarray, detecciones) -> bytes:
-        """Cuadro limpio (sin anotaciones: el panel dibuja las suyas) con las cabezas
-        difuminadas y a lo mas 1280 px de ancho."""
+    def _cuadro_para_panel(self, cuadro: np.ndarray, detecciones, caras=()) -> bytes:
+        """Cuadro limpio (sin anotaciones: el panel dibuja las suyas) con cabezas y rostros
+        difuminados y a lo mas 1280 px de ancho."""
         img = cuadro.copy()
         if self.cfg.difuminar_personas:
-            _difuminar_cabezas(img, detecciones)
+            _difuminar_cabezas(img, detecciones, caras=caras)
         alto, ancho = img.shape[:2]
         if ancho > 1280:
             img = cv2.resize(img, (1280, round(alto * 1280 / ancho)), interpolation=cv2.INTER_AREA)
@@ -422,11 +514,23 @@ class Pipeline:
         conserva su estado (su sesion en curso no se corta); una quitada cierra su sesion."""
         from gymkeep_vision.config import desde_api
 
-        nueva = desde_api(datos, base=self.cfg)
-        nuevas = {m.equipo_id for m in nueva.maquinas}
-        previos = {self.maquinas[n].equipo_id: (n, mon) for n, mon in self.monitores.items()}
-        for equipo_id, (nombre, monitor) in previos.items():
-            if equipo_id not in nuevas:
+        try:
+            nueva = desde_api(datos, base=self.cfg)
+        except ValueError as exc:
+            # Parametros de uso incoherentes (ej. t_off_s <= gracia_s): se aplican las zonas
+            # pero los parametros siguen siendo los anteriores.
+            log.warning("Parametros de uso invalidos desde la plataforma (%s): se conservan los anteriores", exc)
+            uso = self.cfg.uso
+            parametros = {
+                **datos["parametros"],
+                "t_on_s": uso.t_on_s, "t_off_s": uso.t_off_s, "gracia_s": uso.gracia_s, "t_max_s": uso.t_max_s,
+            }
+            nueva = desde_api({**datos, "parametros": parametros}, base=self.cfg)
+        # Se emparejan por equipo_id y, si la maquina previa no lo tiene, por nombre.
+        previos = {_clave_maquina(self.maquinas[n]): (n, mon) for n, mon in self.monitores.items()}
+        continuan = {_clave_previa(m, previos) for m in nueva.maquinas}
+        for clave, (nombre, monitor) in previos.items():
+            if clave not in continuan:
                 for ev in monitor.finalizar(t, "zona_quitada"):
                     self._emitir(ev, nombre, [], None, resultado)
 
@@ -445,7 +549,8 @@ class Pipeline:
         self._preparar_zonas(self._ancho, self._alto)
         self.monitores = {}
         for m in self.cfg.maquinas:
-            monitor = previos[m.equipo_id][1] if m.equipo_id in previos else MonitorMaquina(self.cfg.uso)
+            clave = _clave_previa(m, previos)
+            monitor = previos[clave][1] if clave in previos else MonitorMaquina(self.cfg.uso)
             monitor.p = self.cfg.uso
             self.monitores[m.nombre] = monitor
         resultado.config, resultado.monitores = self.cfg, self.monitores
@@ -453,11 +558,11 @@ class Pipeline:
 
     # ------------------------------------------------------------------ dibujo
 
-    def _anotar(self, cuadro, detecciones, asignadas, t) -> np.ndarray:
+    def _anotar(self, cuadro, detecciones, asignadas, t, caras=()) -> np.ndarray:
         f = self._f
         img = cv2.resize(cuadro, self._tam_dibujo, interpolation=cv2.INTER_LINEAR) if f > 1 else cuadro.copy()
         if self.cfg.difuminar_personas:
-            _difuminar_cabezas(img, detecciones, f)
+            _difuminar_cabezas(img, detecciones, f, caras)
 
         capa = img.copy()
         for zona in self.zonas:
@@ -544,6 +649,18 @@ class Pipeline:
             y += alto_linea
 
 
+def _clave_maquina(maquina: ConfigMaquina) -> int | str:
+    """Identidad de una maquina entre dos configuraciones: su equipo_id o, si no lo tiene, su nombre."""
+    return maquina.equipo_id if maquina.equipo_id is not None else maquina.nombre
+
+
+def _clave_previa(maquina: ConfigMaquina, previos: dict) -> int | str:
+    """Clave con la que una maquina de la configuracion nueva figura en `previos` (si estaba)."""
+    if maquina.equipo_id in previos:
+        return maquina.equipo_id
+    return maquina.nombre if maquina.nombre in previos else _clave_maquina(maquina)
+
+
 def _estado_largo(monitor: MonitorMaquina, t: float) -> str:
     """Estado con su cronometro: cuanto dura la sesion, o cuanto falta para T_on / T_off."""
     progreso = monitor.progreso(t)
@@ -574,20 +691,25 @@ def _rotulo(nombre: str) -> str:
     return ultima if ultima.isdigit() else nombre
 
 
-def _difuminar_cabezas(img: np.ndarray, detecciones: list[Deteccion], f: float = 1.0) -> None:
+def _difuminar_cabezas(img: np.ndarray, detecciones: list[Deteccion], f: float = 1.0, caras=()) -> None:
     """Privacidad por diseno: el sistema mide uso de maquinas, no identifica personas.
-    Difumina el tercio superior de cada persona en el video y las evidencias."""
+    Difumina el tercio superior de cada persona y cada rostro encontrado por el detector de
+    rostros (cajas x1, y1, x2, y2 en coordenadas del cuadro original), en el video, las
+    evidencias y la imagen del panel."""
     alto, ancho = img.shape[:2]
+    cajas = []
     for det in detecciones:
-        x1, y1, x2, y2 = (v * f for v in det.bbox)
-        cabeza_y2 = y1 + (y2 - y1) * 0.3
-        x1, x2 = max(0, int(x1)), min(ancho, int(x2))
-        y1, cabeza_y2 = max(0, int(y1)), min(alto, int(cabeza_y2))
-        if x2 - x1 < 4 or cabeza_y2 - y1 < 4:
+        x1, y1, x2, y2 = det.bbox
+        cajas.append((x1, y1, x2, y1 + (y2 - y1) * 0.3))
+    cajas += list(caras)
+    for x1, y1, x2, y2 in cajas:
+        x1, x2 = max(0, int(x1 * f)), min(ancho, int(x2 * f))
+        y1, y2 = max(0, int(y1 * f)), min(alto, int(y2 * f))
+        if x2 - x1 < 4 or y2 - y1 < 4:
             continue
-        region = img[y1:cabeza_y2, x1:x2]
+        region = img[y1:y2, x1:x2]
         k = max(9, (min(region.shape[:2]) // 2) | 1)
-        img[y1:cabeza_y2, x1:x2] = cv2.GaussianBlur(region, (k, k), 0)
+        img[y1:y2, x1:x2] = cv2.GaussianBlur(region, (k, k), 0)
 
 
 def _texto(img, texto, org, escala, color, grosor=1) -> None:

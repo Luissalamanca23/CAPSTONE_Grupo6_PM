@@ -1,9 +1,11 @@
-from datetime import datetime, timezone
+import logging
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
 from pymongo.errors import DuplicateKeyError
-from sqlalchemy import func
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.mongo import get_mongo_db
@@ -14,6 +16,15 @@ from app.models.gymkeep import (
     TipoEventoIA,
 )
 from app.schemas.ai_event import EventoIACreate
+
+log = logging.getLogger(__name__)
+
+# El pipeline emite `uso_en_curso` cada 60 s mientras la sesion sigue abierta
+# (gymkeep_vision/sesiones.py, heartbeat_s). Sin ninguno en 5 intervalos el pipeline se cayo o
+# perdio la red, y la sesion se cierra desde la API (watchdog de §6.6.5).
+HEARTBEAT_S = 60
+UMBRAL_HUERFANA_S = 5 * HEARTBEAT_S
+INTENTOS_CONSOLIDACION = 3
 
 EVENTOS_DE_USO = (TipoEventoIA.inicio_uso, TipoEventoIA.uso_en_curso, TipoEventoIA.fin_uso)
 
@@ -44,9 +55,7 @@ def guardar_evento_ia(db: Session, evento: EventoIACreate) -> EventoIAResumen:
     Es idempotente por `event_uuid`: si el pipeline reintenta un envio (timeout, corte de
     red), se devuelve el resumen ya guardado sin duplicar nada.
     """
-    existente = (
-        db.query(EventoIAResumen).filter(EventoIAResumen.evento_uuid == evento.event_uuid).first()
-    )
+    existente = _buscar_resumen(db, evento.event_uuid)
     if existente:
         return existente
 
@@ -61,6 +70,26 @@ def guardar_evento_ia(db: Session, evento: EventoIACreate) -> EventoIAResumen:
         # Quedo en Mongo en un intento anterior que fallo antes de llegar a Postgres.
         pass
 
+    for intento in range(INTENTOS_CONSOLIDACION):
+        try:
+            return _guardar_resumen(db, evento)
+        except IntegrityError:
+            # Dos solicitudes a la vez: o el mismo evento (evento_uuid unico) o dos inicios de
+            # uso en la misma maquina (indice unico de sesiones abiertas). Se deshace todo y,
+            # si el evento ya quedo guardado, se devuelve ese; si no, se reintenta.
+            db.rollback()
+            existente = _buscar_resumen(db, evento.event_uuid)
+            if existente:
+                return existente
+            log.warning("Conflicto al consolidar el evento %s (intento %s)", evento.event_uuid, intento + 1)
+    raise IntegrityError("consolidar sesion de uso", {}, Exception("conflicto repetido"))
+
+
+def _buscar_resumen(db: Session, evento_uuid: UUID) -> EventoIAResumen | None:
+    return db.query(EventoIAResumen).filter(EventoIAResumen.evento_uuid == evento_uuid).first()
+
+
+def _guardar_resumen(db: Session, evento: EventoIACreate) -> EventoIAResumen:
     evidencia = evento.evidencia
     tipo_evento = TipoEventoIA(evento.evento.tipo)
 
@@ -96,16 +125,7 @@ def _consolidar_sesion_uso(db: Session, evento: EventoIACreate, tipo: TipoEvento
     La histeresis (T_on / T_off) ya la aplico el pipeline; aqui solo se abre, se sostiene
     y se cierra la sesion. Devuelve None si el evento no corresponde a ninguna sesion
     (ej. un fin_uso sin inicio): el resumen queda con procesado = FALSE para revisarlo."""
-    abierta = (
-        db.query(SesionUso)
-        .filter(
-            SesionUso.equipo_id == evento.equipo_id,
-            SesionUso.camara_id == evento.camara_id,
-            SesionUso.estado == "abierta",
-        )
-        .order_by(SesionUso.fecha_inicio.desc())
-        .first()
-    )
+    abierta = _sesion_abierta(db, evento.equipo_id, evento.camara_id)
     confianza = evento.evento.confidence
     metadata = {k: evento.metadata[k] for k in METADATA_SESION if k in evento.metadata}
 
@@ -149,7 +169,20 @@ def _consolidar_sesion_uso(db: Session, evento: EventoIACreate, tipo: TipoEvento
     return abierta
 
 
-def _cerrar_sesion_huerfana(db: Session, sesion: SesionUso) -> None:
+def _sesion_abierta(db: Session, equipo_id: int, camara_id: int | None) -> SesionUso | None:
+    return (
+        db.query(SesionUso)
+        .filter(
+            SesionUso.equipo_id == equipo_id,
+            SesionUso.camara_id == camara_id,
+            SesionUso.estado == "abierta",
+        )
+        .order_by(SesionUso.fecha_inicio.desc())
+        .first()
+    )
+
+
+def _cerrar_sesion_huerfana(db: Session, sesion: SesionUso, cierre: str = "forzado") -> None:
     """Llega un inicio_uso con una sesion todavia abierta en la misma maquina y camara:
     el fin_uso anterior se perdio (reinicio del pipeline, corte de red). Se aplica la
     regla del watchdog de §6.6.5: si hubo eventos intermedios se cierra en el ultimo
@@ -160,16 +193,59 @@ def _cerrar_sesion_huerfana(db: Session, sesion: SesionUso) -> None:
             .filter(EventoIAResumen.sesion_uso_id == sesion.id)
             .scalar()
         )
-        sesion.fecha_fin = ultimo or sesion.fecha_inicio
+        sesion.fecha_fin = _no_antes_de(ultimo, sesion.fecha_inicio)
         sesion.estado = "cerrada"
         sesion.duracion_segundos = _segundos_entre(sesion.fecha_inicio, sesion.fecha_fin)
-        sesion.metadata_json = {**(sesion.metadata_json or {}), "cierre": "forzado"}
+        sesion.metadata_json = {**(sesion.metadata_json or {}), "cierre": cierre}
     else:
         sesion.estado = "descartada"
         sesion.metadata_json = {
             **(sesion.metadata_json or {}),
             "motivo": "sin_evidencia_de_continuidad",
         }
+
+
+def _no_antes_de(fecha: datetime | None, minimo: datetime) -> datetime:
+    """`fecha`, o `minimo` si es anterior (o no hay): ck_sesion_uso_fechas exige fin >= inicio.
+    Postgres devuelve fechas con zona horaria; SQLite (tests) sin ella."""
+    if fecha is None:
+        return minimo
+    a, b = fecha, minimo
+    if a.tzinfo is None or b.tzinfo is None:
+        a, b = a.replace(tzinfo=None), b.replace(tzinfo=None)
+    return fecha if a >= b else minimo
+
+
+def _utc(momento: datetime) -> datetime:
+    return momento.replace(tzinfo=timezone.utc) if momento.tzinfo is None else momento
+
+
+def cerrar_sesiones_huerfanas(
+    db: Session, ahora: datetime | None = None, umbral_s: int = UMBRAL_HUERFANA_S
+) -> int:
+    """Watchdog (§6.6.5): cierra las sesiones `abierta` que no reciben eventos hace mas de
+    `umbral_s` segundos (medido con la hora de recepcion en la API, no con la del pipeline).
+    Aplica la misma regla que un inicio_uso sobre una sesion abierta: con eventos intermedios
+    se cierra en el ultimo evento recibido; con solo el inicio se descarta. Devuelve cuantas
+    sesiones cerro."""
+    ahora = ahora or datetime.now(timezone.utc)
+    limite = ahora - timedelta(seconds=umbral_s)
+    filas = db.execute(
+        select(SesionUso, func.max(EventoIAResumen.created_at))
+        .outerjoin(EventoIAResumen, EventoIAResumen.sesion_uso_id == SesionUso.id)
+        .where(SesionUso.estado == "abierta")
+        .group_by(SesionUso.id)
+    ).all()
+    cerradas = 0
+    for sesion, ultima_recepcion in filas:
+        ultimo = _utc(ultima_recepcion or sesion.created_at or sesion.fecha_inicio)
+        if ultimo < limite:
+            _cerrar_sesion_huerfana(db, sesion, cierre="watchdog")
+            cerradas += 1
+    if cerradas:
+        db.commit()
+        log.info("Watchdog: %s sesion(es) de uso huerfana(s) cerrada(s)", cerradas)
+    return cerradas
 
 
 def _segundos_entre(inicio: datetime, fin: datetime) -> int:
@@ -217,7 +293,7 @@ def finalizar_sesion_uso(
     confianza_promedio: float | None = None,
 ) -> SesionUso:
     """Cierra una sesion de uso. Hace flush (no commit), igual que iniciar_sesion_uso."""
-    sesion.fecha_fin = fecha_fin or datetime.now(timezone.utc)
+    sesion.fecha_fin = _no_antes_de(fecha_fin or datetime.now(timezone.utc), sesion.fecha_inicio)
     sesion.evento_fin_uuid = evento_fin_uuid
     sesion.estado = "cerrada"
 

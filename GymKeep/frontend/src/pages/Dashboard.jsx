@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client.js'
+import { visionApi } from '../api/vision.js'
 import { CATEGORIAS_EQUIPO } from '../components/CategoriaEquipoBadge.jsx'
 import EstadoBadge from '../components/EstadoBadge.jsx'
 import EstadoVivoChip from '../components/EstadoVivoChip.jsx'
@@ -39,9 +40,20 @@ const ETIQUETA_CATEGORIA = Object.fromEntries(CATEGORIAS_EQUIPO.map((c) => [c.va
 // Cada cuanto se vuelve a pedir el estado en vivo de las camaras (si hay pipeline de vision).
 const REFRESCO_USO_MS = 5000
 
-// Cuantas incidencias se piden a la API para los calculos del panel (el valor por defecto
-// del backend es 100, que dejaria los totales cortos en cuanto haya historial).
-const LIMITE_INCIDENCIAS = 5000
+// La API entrega a lo mas 500 filas por llamada: para que los totales del panel no queden
+// cortos se piden por paginas hasta traer todo (con un tope de seguridad).
+const FILAS_POR_LLAMADA = 500
+const MAX_LLAMADAS = 40
+
+async function traerTodo(pedir) {
+  const todo = []
+  for (let i = 0; i < MAX_LLAMADAS; i += 1) {
+    const lote = await pedir({ skip: i * FILAS_POR_LLAMADA, limit: FILAS_POR_LLAMADA })
+    todo.push(...lote)
+    if (lote.length < FILAS_POR_LLAMADA) break
+  }
+  return todo
+}
 
 const formatoNumero = (valor) => Number(valor).toLocaleString('es-CL')
 const formatoHoras = (valor) => `${Number(valor).toLocaleString('es-CL', { maximumFractionDigits: 1 })} h`
@@ -126,8 +138,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     Promise.all([
-      api.listarEquipos(),
-      api.listarIncidencias({ limit: LIMITE_INCIDENCIAS }),
+      traerTodo((pagina) => api.listarEquipos(null, pagina)),
+      traerTodo((pagina) => api.listarIncidencias(pagina)),
       // Si falla el historial de mantenciones el resto del panel sigue funcionando.
       api.listarTodosLosMantenimientos().catch(() => []),
     ])
@@ -145,8 +157,8 @@ export default function Dashboard() {
   useEffect(() => {
     let activo = true
     function cargarUso() {
-      api
-        .listarUsoMaquinas()
+      visionApi
+        .listarMaquinas()
         .then((datos) => activo && setUsoPorEquipo(new Map(datos.map((m) => [m.equipo_id, m]))))
         .catch(() => {})
     }

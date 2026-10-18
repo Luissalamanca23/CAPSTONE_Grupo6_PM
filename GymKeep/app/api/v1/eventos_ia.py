@@ -2,13 +2,14 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.pipeline_key import verificar_clave_pipeline
 from app.schemas.ai_event import EventoIACreate
 from app.services import ai_event_service
 
 router = APIRouter()
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED, dependencies=[Depends(verificar_clave_pipeline)])
 def registrar_evento_ia(evento_in: EventoIACreate, db: Session = Depends(get_db)):
     """Recibe un evento del pipeline de camara/IA (ver GymKeep_BDD_Completa/README.md,
     seccion 'detección != uso'). El documento completo se guarda en MongoDB y un resumen

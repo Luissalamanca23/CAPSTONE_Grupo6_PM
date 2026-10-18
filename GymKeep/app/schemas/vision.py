@@ -11,7 +11,8 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Punto = tuple[float, float]
-EstadoMaquinaVivo = Literal["libre", "candidata", "en_uso", "pausa"]
+# "ocupada": alguien encima sin entrenar (solo si el pipeline mide actividad con pose).
+EstadoMaquinaVivo = Literal["libre", "candidata", "en_uso", "pausa", "ocupada"]
 
 
 # ---------------------------------------------------------------- camaras y ROI
@@ -50,6 +51,9 @@ class ParametrosVision(BaseModel):
     confianza_min: float = Field(0.50, ge=0.05, le=0.95, description="MP-47: confianza minima de una persona.")
     gracia_s: float = Field(2, ge=0, le=60, description="Huecos de deteccion que no cuentan como ausencia.")
     escala_tiempo: float = Field(1.0, gt=0, le=10, description="Segundos reales por segundo de video.")
+    t_max_s: float = Field(
+        10800, ge=600, le=86400, description="Duracion maxima de una sesion: pasado esto el pipeline la cierra."
+    )
 
     @model_validator(mode="after")
     def _t_off_mayor_que_gracia(self):
@@ -111,6 +115,7 @@ class PersonaVivo(BaseModel):
     confianza: float = Field(ge=0, le=1)
     track_id: Optional[int] = None
     equipo_id: Optional[int] = Field(default=None, description="Maquina a la que quedo asignada, si alguna.")
+    activa: Optional[bool] = Field(default=None, description="Si se mueve como quien entrena (pose); None si no se mide.")
 
 
 class ModeloVivo(BaseModel):

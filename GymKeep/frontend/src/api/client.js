@@ -1,47 +1,42 @@
 export const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
-async function request(path, options = {}) {
+// Error de la API con el codigo HTTP (el flujo del PIN del modulo de vision depende de .status).
+export class ErrorApi extends Error {
+  constructor(mensaje, status) {
+    super(mensaje)
+    this.status = status
+  }
+}
+
+// Peticion JSON compartida por todas las pantallas. Los cuerpos Blob (subida de imagenes)
+// no llevan Content-Type JSON; las cabeceras de options se suman a las base.
+export async function request(path, options = {}) {
   const respuesta = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: {
+      ...(options.body instanceof Blob ? {} : { 'Content-Type': 'application/json' }),
+      ...options.headers,
+    },
   })
 
   if (!respuesta.ok) {
     let detalle = respuesta.statusText
     try {
       const cuerpo = await respuesta.json()
-      detalle = cuerpo.detail || detalle
+      if (cuerpo.detail) detalle = typeof cuerpo.detail === 'string' ? cuerpo.detail : JSON.stringify(cuerpo.detail)
     } catch {
       // el cuerpo no era JSON, se mantiene el statusText
     }
-    throw new Error(detalle)
+    throw new ErrorApi(detalle, respuesta.status)
   }
 
   if (respuesta.status === 204) return null
   return respuesta.json()
 }
 
-// Igual que request(), pero para enviar un archivo (imagen) tal cual, sin JSON.
-async function requestBinario(path, archivo, method = 'PUT') {
-  const respuesta = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers: { 'Content-Type': archivo.type || 'image/jpeg' },
-    body: archivo,
-  })
-  if (!respuesta.ok) {
-    let detalle = respuesta.statusText
-    try {
-      const cuerpo = await respuesta.json()
-      detalle = cuerpo.detail || detalle
-    } catch {
-      // el cuerpo no era JSON, se mantiene el statusText
-    }
-    throw new Error(detalle)
-  }
-  return respuesta.json()
-}
-
 export const api = {
+  // Conteos agregados (SQL) para el panel de gestion; no dependen de listas truncadas.
+  obtenerEstadisticas: () => request('/estadisticas/'),
   // Empresas / sucursales / zonas: jerarquia obligatoria para registrar equipamiento
   // (ver GymKeep_BDD_Completa). Para el Capstone normalmente hay una sola empresa/sucursal,
   // creada por la data de ejemplo (postgres/seed.sql).
@@ -61,8 +56,11 @@ export const api = {
   crearZona: (datos) => request('/zonas/', { method: 'POST', body: JSON.stringify(datos) }),
 
   // Equipamiento
-  listarEquipos: (sucursalId) => {
-    const query = sucursalId ? `?sucursal_id=${sucursalId}` : ''
+  // `extra` admite skip y limit (la API entrega a lo mas 500 filas por llamada).
+  listarEquipos: (sucursalId, extra = {}) => {
+    const params = new URLSearchParams(extra)
+    if (sucursalId) params.set('sucursal_id', sucursalId)
+    const query = params.toString() ? `?${params.toString()}` : ''
     return request(`/equipamiento/${query}`)
   },
   obtenerEquipo: (id) => request(`/equipamiento/${id}`),
@@ -121,35 +119,4 @@ export const api = {
     return request(`/mantenimientos/${query}`)
   },
   crearMantenimiento: (datos) => request('/mantenimientos/', { method: 'POST', body: JSON.stringify(datos) }),
-
-  // Vision por computadora (ver vision/INTEGRACION.md). Las coordenadas de zonas y personas
-  // son normalizadas 0..1 respecto de la imagen de la camara.
-  listarCamaras: (sucursalId) => {
-    const query = sucursalId ? `?sucursal_id=${sucursalId}` : ''
-    return request(`/vision/camaras${query}`)
-  },
-  obtenerCamara: (id) => request(`/vision/camaras/${id}`),
-  crearCamara: (datos) => request('/camaras/', { method: 'POST', body: JSON.stringify(datos) }),
-  obtenerVivo: (id) => request(`/vision/camaras/${id}/vivo`),
-  // Video en vivo (MJPEG): se muestra con <img src=...>; el navegador va reemplazando el cuadro.
-  urlStreamCamara: (id) => `${BASE_URL}/vision/camaras/${id}/stream`,
-  urlCuadroCamara: (id, marca) => `${BASE_URL}/vision/camaras/${id}/cuadro${marca ? `?t=${marca}` : ''}`,
-  subirCuadroCamara: (id, archivo) => requestBinario(`/vision/camaras/${id}/cuadro`, archivo),
-  guardarZona: (camaraId, equipoId, puntos) =>
-    request(`/vision/camaras/${camaraId}/maquinas/${equipoId}`, { method: 'PUT', body: JSON.stringify({ puntos }) }),
-  quitarZona: (camaraId, equipoId) => request(`/vision/camaras/${camaraId}/maquinas/${equipoId}`, { method: 'DELETE' }),
-  guardarParametrosCamara: (id, parametros) =>
-    request(`/vision/camaras/${id}/parametros`, { method: 'PUT', body: JSON.stringify(parametros) }),
-
-  listarUsoMaquinas: (sucursalId) => {
-    const query = sucursalId ? `?sucursal_id=${sucursalId}` : ''
-    return request(`/vision/maquinas${query}`)
-  },
-  obtenerUsoMaquina: (id) => request(`/vision/maquinas/${id}`),
-  urlFotoMaquina: (id, marca) => `${BASE_URL}/vision/maquinas/${id}/foto${marca ? `?t=${marca}` : ''}`,
-  subirFotoMaquina: (id, archivo) => requestBinario(`/vision/maquinas/${id}/foto`, archivo),
-  fotoMaquinaDesdeCamara: (id, camaraId) => {
-    const query = camaraId ? `?camara_id=${camaraId}` : ''
-    return request(`/vision/maquinas/${id}/foto/desde-camara${query}`, { method: 'POST' })
-  },
 }

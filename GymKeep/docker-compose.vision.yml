@@ -24,6 +24,10 @@
 #                   zonas que se editen en el panel.
 #   VISION_CUADRO_CADA_S  cada cuantos segundos se sube un cuadro al panel (1)
 #   VISION_API      URL de la API vista desde el contenedor              (http://api:8000)
+#   VISION_PIPELINE_KEY  clave que el pipeline envia en X-Pipeline-Key. Debe coincidir con la
+#                   VISION_PIPELINE_KEY de la API (vacia = la API no la exige)
+#   VISION_PIN      PIN de edicion de la API; solo hace falta para aplicar las zonas iniciales
+#                   si la API lo exige (vacio = sin PIN)
 
 include:
   - docker-compose.yml
@@ -49,6 +53,8 @@ services:
       VISION_OPCIONES: ${VISION_OPCIONES:---tiempo-real --repetir}
       VISION_ZONAS: ${VISION_ZONAS-/app/config/zonas_cintas.json}
       VISION_CUADRO_CADA_S: ${VISION_CUADRO_CADA_S:-1}
+      VISION_PIPELINE_KEY: ${VISION_PIPELINE_KEY:-}
+      VISION_PIN: ${VISION_PIN:-}
     entrypoint: ["sh", "-c"]
     command:
       - >-

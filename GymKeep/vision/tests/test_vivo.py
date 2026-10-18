@@ -142,3 +142,8 @@ def test_zona_editada_no_corta_la_sesion_y_zona_quitada_la_cierra(pipeline):
     assert p.monitores == {}
     assert [e["evento"]["tipo"] for e in resultado.eventos] == ["fin_uso"]
     assert resultado.eventos[0]["metadata"]["cierre"] == "zona_quitada"
+
+
+def test_t_max_viene_de_la_plataforma_o_usa_el_defecto():
+    assert desde_api(configuracion()).uso.t_max_s == 10800
+    assert desde_api(configuracion(t_max_s=7200)).uso.t_max_s == 7200

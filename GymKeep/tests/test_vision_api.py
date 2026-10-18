@@ -20,7 +20,8 @@ class ColeccionFalsa:
         self.docs = {}
 
     def find(self, filtro=None, proyeccion=None):
-        return [dict(d) for d in self.docs.values()]
+        ids = ((filtro or {}).get("_id") or {}).get("$in")
+        return [dict(d) for d in self.docs.values() if ids is None or d["_id"] in ids]
 
     def find_one(self, filtro, proyeccion=None):
         doc = self.docs.get(filtro["_id"])
@@ -187,6 +188,19 @@ def test_estado_en_vivo_queda_en_mongo_y_marca_la_camara_en_linea(client, mongo,
     assert (camara["ancho_px"], camara["alto_px"]) == (1920, 1080)
 
 
+def test_estado_ocupada_sin_uso_y_actividad_de_cada_persona(client, mongo, camara_y_equipo):
+    camara_id, equipo_id = camara_y_equipo
+    estado = estado_vivo(equipo_id, estado="ocupada")
+    estado["personas"][0]["activa"] = False
+    assert client.post(f"/api/v1/vision/camaras/{camara_id}/vivo", json=estado).status_code == 202
+    vivo = client.get(f"/api/v1/vision/camaras/{camara_id}/vivo").json()
+    assert vivo["maquinas"][0]["estado"] == "ocupada"
+    assert vivo["personas"][0]["activa"] is False
+    # Ocupada sin uso no es "en uso ahora".
+    maquina = next(m for m in client.get("/api/v1/vision/maquinas").json() if m["equipo_id"] == equipo_id)
+    assert maquina["en_uso_ahora"] is False
+
+
 def test_camara_sin_datos_recientes_queda_sin_senal(client, mongo, camara_y_equipo):
     camara_id, equipo_id = camara_y_equipo
     client.post(f"/api/v1/vision/camaras/{camara_id}/vivo", json=estado_vivo(equipo_id))
@@ -209,6 +223,25 @@ def test_cuadro_de_la_camara(client, mongo, camara_y_equipo):
     assert client.get("/api/v1/vision/camaras").json()[0]["tiene_cuadro"] is True
 
     assert client.put(url, content=b"no es una imagen").status_code == 400
+
+
+def test_imagenes_enormes_se_rechazan_sin_agotar_memoria(client, mongo, camara_y_equipo):
+    camara_id, _ = camara_y_equipo
+    url = f"/api/v1/vision/camaras/{camara_id}/cuadro"
+    # PNG de un solo color: pesa pocos KB pero declara 48 megapixeles.
+    bomba = imagen("PNG", (8000, 6000))
+    assert len(bomba) < 5 * 1024 * 1024
+    assert client.put(url, content=bomba, headers={"Content-Type": "image/png"}).status_code == 400
+    assert client.put(url, content=b"0" * (5 * 1024 * 1024 + 1)).status_code == 413
+
+
+def test_la_clave_rtsp_no_llega_al_panel(client, mongo, sucursal_id):
+    client.post(
+        "/api/v1/camaras/",
+        json={"codigo": "CAM-R", "nombre": "Con clave", "sucursal_id": sucursal_id, "rtsp_url": "rtsp://admin:secreta@10.0.0.5:554/s1"},
+    )
+    camaras = {c["codigo"]: c for c in client.get("/api/v1/vision/camaras").json()}
+    assert camaras["CAM-R"]["rtsp_url"] == "rtsp://***@10.0.0.5:554/s1"
 
 
 # ---------------------------------------------------------------- uso de maquinas y fotos

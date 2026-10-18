@@ -350,6 +350,11 @@ ON sesiones_uso(camara_id, fecha_inicio DESC);
 CREATE INDEX IF NOT EXISTS ix_sesiones_uso_estado
 ON sesiones_uso(estado);
 
+-- Una sola sesion abierta por maquina y camara: dos inicios de uso simultaneos no pueden abrir
+-- dos sesiones (la API reintenta y cierra la anterior como huerfana).
+CREATE UNIQUE INDEX IF NOT EXISTS ux_sesiones_uso_abierta
+ON sesiones_uso(equipo_id, camara_id) WHERE estado = 'abierta';
+
 -- ---------- RESUMEN DE EVENTOS IA ----------
 -- Puente entre PostgreSQL y MongoDB.
 -- Guarda solo metadatos consultables; el documento completo vive en MongoDB.
