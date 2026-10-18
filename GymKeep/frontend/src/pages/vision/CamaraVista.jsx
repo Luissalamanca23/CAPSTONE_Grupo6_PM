@@ -333,7 +333,7 @@ function AsignarZona({ camara, equipos, onCancelar, onAsignar }) {
         </div>
       )}
       <div className="flex gap-2">
-        <button type="submit" className="flex-1 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
+        <button type="submit" className="flex-1 px-3 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700">
           Guardar zona
         </button>
         <button type="button" onClick={onCancelar} className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm">
@@ -473,7 +473,7 @@ export default function CamaraVista() {
   return (
     <div className="space-y-5">
       <PinDialogo />
-      <Link to="/camaras" className="text-sm text-emerald-700 hover:underline">
+      <Link to="/camaras" className="text-sm text-brand-700 hover:underline">
         ← Cámaras
       </Link>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -508,7 +508,7 @@ export default function CamaraVista() {
                 {maquinaObjetivo ? `Zona de ${maquinaObjetivo.nombre}: haz` : 'Haz'} clic en la imagen para marcar las
                 esquinas donde se apoya quien usa la máquina. Cierra la zona haciendo clic en el primer punto (verde).
               </p>
-              <button type="button" disabled={puntos.length < 3} onClick={cerrarPoligono} className="px-3 py-1.5 rounded-md bg-emerald-600 text-white disabled:opacity-40">
+              <button type="button" disabled={puntos.length < 3} onClick={cerrarPoligono} className="px-3 py-1.5 rounded-md bg-brand-600 text-white disabled:opacity-40">
                 Terminar ({puntos.length} puntos)
               </button>
               <button type="button" onClick={() => setPuntos(puntos.slice(0, -1))} disabled={!puntos.length} className="px-3 py-1.5 rounded-md border border-slate-300 bg-white disabled:opacity-40">
@@ -524,7 +524,7 @@ export default function CamaraVista() {
               <p className="flex-1 text-slate-700">
                 Editando la zona de <span className="font-semibold">{maquinaObjetivo.nombre}</span>: arrastra los puntos o selecciónalos y muévelos con las flechas del teclado.
               </p>
-              <button type="button" onClick={() => guardarZona(objetivo).catch((err) => setAviso(err.message))} className="px-3 py-1.5 rounded-md bg-emerald-600 text-white">
+              <button type="button" onClick={() => guardarZona(objetivo).catch((err) => setAviso(err.message))} className="px-3 py-1.5 rounded-md bg-brand-600 text-white">
                 Guardar zona
               </button>
               <button type="button" onClick={() => empezarDibujo(objetivo)} className="px-3 py-1.5 rounded-md border border-slate-300 bg-white">
@@ -565,7 +565,7 @@ export default function CamaraVista() {
                 type="button"
                 disabled={enEdicion || !url}
                 onClick={() => empezarDibujo()}
-                className="text-xs font-medium px-2.5 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"
+                className="text-xs font-medium px-2.5 py-1.5 rounded-md bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40"
               >
                 + Agregar máquina
               </button>
@@ -594,7 +594,7 @@ export default function CamaraVista() {
                           type="button"
                           disabled={enEdicion || !url}
                           onClick={() => (m.roi ? editarZona(m) : empezarDibujo(m.equipo_id))}
-                          className="text-xs text-emerald-700 hover:underline disabled:opacity-40"
+                          className="text-xs text-brand-700 hover:underline disabled:opacity-40"
                         >
                           {m.roi ? 'Editar zona' : 'Dibujar zona'}
                         </button>

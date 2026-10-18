@@ -451,3 +451,65 @@ los modelos sobre SQLite.
 - Soporte real para múltiples sucursales en el frontend, si el proyecto lo llega a
   necesitar.
 - Frontend móvil/PWA dedicado para el escaneo de QR.
+
+
+## Eliminar datos desde el panel
+
+Cada pantalla tiene un botón **Eliminar** que abre un diálogo con lo que se llevaría el borrado (reportes,
+mantenimientos, sesiones de uso, eventos de IA, QR…) y pide escribir `ELIMINAR` antes de borrar. Es
+irreversible y funciona en cascada:
+
+| Dónde | Qué borra |
+|---|---|
+| Equipos / detalle de máquina | La máquina con sus reportes, mantenimientos, sesiones, QR, eventos y foto. |
+| Sucursales y zonas | La sucursal con zonas, máquinas, cámaras y todo lo anterior. La zona (×) solo se quita: sus máquinas y cámaras quedan sin zona. |
+| Cámaras | La cámara con sus eventos de IA y estado en vivo; sus sesiones de uso y reportes se conservan sin cámara. |
+| Incidencias | El reporte (los mantenimientos que lo mencionaban se conservan). |
+| Detalle de máquina y Costos | El registro de mantenimiento. |
+
+API: `GET /{recurso}/{id}/resumen-eliminacion` devuelve los conteos y `DELETE /{recurso}/{id}?forzar=true`
+borra; sin `forzar`, la API se niega si hay datos asociados. Para vaciar todo de una vez (datos de prueba)
+quedan `postgres/limpiar_datos_pruebas.sql` y `mongo/limpiar_datos_pruebas.js`.
+
+
+## Foto de referencia de cada máquina
+
+Al crear una máquina (Equipos → Nueva máquina) se puede elegir o tomar una foto; también se puede subir o
+cambiar desde el detalle de la máquina. La foto se achica en el navegador y se guarda en MongoDB
+(`fotos_equipos`) vía `PUT /api/v1/vision/maquinas/{id}/foto`, así que si `VISION_PIN` está configurado el
+panel pide el PIN al subirla. Se muestra en la lista de Equipos y en el panel de uso por máquina.
+
+
+## Categorías de máquinas y edición
+
+Las máquinas se clasifican en 6 categorías: `cardio`, `placas` (placas/guiadas), `discos` (carga de discos),
+`peso_libre`, `bancos_racks` y `funcional`. La API solo acepta esas al crear o editar. Para pasar las máquinas
+ya ingresadas al esquema nuevo (clasifica por el nombre, guarda un respaldo y lista lo que no reconoce):
+
+```powershell
+Get-Content postgres\reclasificar_categorias.sql -Raw | docker compose exec -T db psql -U gymkeep -d gymkeep
+```
+
+Lo que quede "sin clasificar" se corrige con **Editar** (lista de Equipos o detalle de la máquina), que permite
+cambiar nombre, código, categoría, zona, marca, modelo, serie, fechas, vida útil y observaciones. El filtro
+"Por reclasificar / sin categoría" de la lista muestra las pendientes.
+
+
+## Historial del gimnasio (datos de demostración)
+
+Para que el Panel tenga con qué inferir, el script `postgres/historial_demo.sql` hace que el gimnasio lleve 2 años
+y 8 meses abierto: fechas de instalación, vida útil por tipo de máquina, ~140.000 franjas de uso (las máquinas
+más pedidas acumulan miles de horas), ~70 incidencias (concentradas en caminadoras, bicicletas y máquinas con
+polea) y mantenciones con costo: una visita preventiva cada 60 días con cuota fija de $50.000 que revisa todas
+las máquinas, y reparaciones con repuesto solo cuando corresponde. El gasto total no pasa de $3 millones. Todo
+queda marcado como demo (`"demo": "historial3"`) y es repetible; los ajustes están al inicio del archivo.
+Cómo se calibró, con fuentes: `Analisis_Vida_Util_Equipos.md`.
+
+```powershell
+docker compose cp postgres\historial_demo.sql db:/tmp/historial_demo.sql
+docker compose exec db psql -U gymkeep -d gymkeep -f /tmp/historial_demo.sql
+```
+
+Reemplaza a `datos_demo_dashboard.sql` (borra lo que ese script creó). Guarda las fechas originales en
+`respaldo_fechas_equipos`; al final del archivo hay un bloque DESHACER. El Panel tiene una sección
+**Demanda de máquinas** que usa esas horas de uso para decidir qué máquinas sumar al ampliar o abrir otro local.

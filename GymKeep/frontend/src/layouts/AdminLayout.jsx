@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import FaqAyuda from '../components/FaqAyuda.jsx'
 
@@ -64,75 +64,174 @@ const ENLACES = [
   { to: '/sucursales', label: 'Sucursales', icono: ICONOS.sucursales },
 ]
 
-function claseEnlace({ isActive }) {
-  return `flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-    isActive ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-  }`
+const CLAVE_COLAPSO = 'gymkeep.menuColapsado'
+
+function leerColapsado() {
+  try {
+    return localStorage.getItem(CLAVE_COLAPSO) === '1'
+  } catch {
+    return false // sin almacenamiento: el menu arranca expandido
+  }
 }
 
-function ContenidoMenu({ onNavegar }) {
+function guardarColapsado(valor) {
+  try {
+    localStorage.setItem(CLAVE_COLAPSO, valor ? '1' : '0')
+  } catch {
+    // no se recuerda la preferencia, el menu sigue funcionando
+  }
+}
+
+function claseEnlace(compacto) {
+  return ({ isActive }) =>
+    `flex items-center gap-3 rounded-lg text-sm font-semibold tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white ${
+      compacto ? 'justify-center px-0 py-3' : 'px-4 py-3'
+    } ${isActive ? 'bg-brand-600 text-white' : 'text-zinc-300 hover:bg-white/10 hover:text-white'}`
+}
+
+const ICONO_HAMBURGUESA = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6">
+    <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
+  </svg>
+)
+const ICONO_CERRAR = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6">
+    <path d="M6 6l12 12M18 6 6 18" strokeLinecap="round" />
+  </svg>
+)
+
+function Marca({ className = 'text-xl' }) {
+  return (
+    <span className={`font-display italic font-bold leading-none ${className}`}>
+      <span className="text-white">Gym</span>
+      <span className="text-brand-600">Keep</span>
+    </span>
+  )
+}
+
+const BOTON_CABECERA =
+  'p-2 rounded-lg text-zinc-300 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white'
+
+/** Contenido del menu: logo, enlaces y pie. `compacto` deja solo iconos (riel angosto). */
+function ContenidoMenu({ compacto = false, onNavegar, accionCabecera }) {
   return (
     <>
-      <div className="px-5 py-4 border-b border-slate-100">
-        <p className="text-lg font-bold text-emerald-700">GymKeep</p>
-        <p className="text-xs text-slate-400">Panel de gestión</p>
+      <div className={`border-b border-white/10 ${compacto ? 'px-2 py-3' : 'px-4 pt-3 pb-4'}`}>
+        <div className={`flex items-center ${compacto ? 'justify-center' : 'justify-between'}`}>
+          {!compacto && <span className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Menú</span>}
+          <button type="button" onClick={accionCabecera.onClick} aria-label={accionCabecera.etiqueta} title={accionCabecera.etiqueta} className={BOTON_CABECERA}>
+            {accionCabecera.icono}
+          </button>
+        </div>
+        <div className="mt-2 flex justify-center">
+          {compacto ? (
+            <img src="/icono.png" alt="GymKeep" className="w-12 h-12 rounded-lg" />
+          ) : (
+            <img src="/logo.png" alt="GymKeep" className="w-44 max-w-full h-auto" />
+          )}
+        </div>
       </div>
-      <nav className="flex-1 px-3 py-3 space-y-1">
+
+      <nav className={`flex-1 overflow-y-auto py-3 space-y-1 ${compacto ? 'px-2' : 'px-3'}`} aria-label="Secciones del panel">
         {ENLACES.map((enlace) => (
-          <NavLink key={enlace.to} to={enlace.to} end={enlace.end} className={claseEnlace} onClick={onNavegar}>
+          <NavLink
+            key={enlace.to}
+            to={enlace.to}
+            end={enlace.end}
+            className={claseEnlace(compacto)}
+            onClick={onNavegar}
+            title={compacto ? enlace.label : undefined}
+            aria-label={compacto ? enlace.label : undefined}
+          >
             {enlace.icono}
-            {enlace.label}
+            {!compacto && enlace.label}
           </NavLink>
         ))}
       </nav>
-      <div className="px-5 py-3 border-t border-slate-100 text-xs text-slate-400">
-        Fase 2 · Desarrollo del sistema
-      </div>
+
+      {!compacto && (
+        <div className="px-5 py-3 border-t border-white/10 text-xs text-zinc-500">Fase 2 · Desarrollo del sistema</div>
+      )}
     </>
   )
 }
 
 export default function AdminLayout() {
-  const [menuAbierto, setMenuAbierto] = useState(false)
+  const [menuAbierto, setMenuAbierto] = useState(false) // panel deslizante (movil)
+  const [colapsado, setColapsado] = useState(leerColapsado) // riel de iconos (escritorio)
+
+  function alternarColapso() {
+    setColapsado((actual) => {
+      guardarColapsado(!actual)
+      return !actual
+    })
+  }
+
+  // Panel movil: Escape lo cierra y mientras esta abierto la pagina de fondo no se desplaza.
+  useEffect(() => {
+    if (!menuAbierto) return undefined
+    const alTeclear = (e) => e.key === 'Escape' && setMenuAbierto(false)
+    window.addEventListener('keydown', alTeclear)
+    const overflowPrevio = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', alTeclear)
+      document.body.style.overflow = overflowPrevio
+    }
+  }, [menuAbierto])
 
   return (
-    <div className="min-h-screen flex bg-slate-50">
-      {/* Menu lateral fijo en pantallas medianas o mas grandes */}
-      <aside className="hidden md:flex flex-col w-56 shrink-0 bg-white border-r border-slate-200">
-        <ContenidoMenu />
+    <div className="min-h-screen bg-slate-50">
+      {/* Menu del lado izquierdo, fijo a la ventana: ocupa todo el alto y NO se mueve al hacer scroll. */}
+      <aside
+        className={`hidden md:flex fixed inset-y-0 left-0 z-30 flex-col bg-black border-r border-white/10 transition-[width] duration-200 ${
+          colapsado ? 'w-[4.5rem]' : 'w-64'
+        }`}
+      >
+        <ContenidoMenu
+          compacto={colapsado}
+          accionCabecera={{
+            onClick: alternarColapso,
+            etiqueta: colapsado ? 'Expandir menú' : 'Contraer menú',
+            icono: ICONO_HAMBURGUESA,
+          }}
+        />
       </aside>
 
-      {/* En movil no hay espacio para un menu lateral fijo: una barra superior angosta
-          con boton hamburguesa abre el mismo menu como panel deslizante. */}
-      <div className="md:hidden fixed top-0 inset-x-0 z-30 bg-white border-b border-slate-200 flex items-center justify-between px-4 py-3">
-        <p className="font-bold text-emerald-700">GymKeep</p>
+      {/* Movil: barra superior con el logo y la hamburguesa que abre el panel de la izquierda. */}
+      <header className="md:hidden fixed top-0 inset-x-0 z-30 h-14 bg-black border-b border-white/10 flex items-center gap-2 px-4">
+        <button type="button" onClick={() => setMenuAbierto(true)} aria-label="Abrir menú" aria-expanded={menuAbierto} className={`${BOTON_CABECERA} -ml-2`}>
+          {ICONO_HAMBURGUESA}
+        </button>
+        <img src="/icono.png" alt="" className="w-9 h-9 rounded-md" />
+        <Marca />
+      </header>
+
+      <div className={`md:hidden fixed inset-0 z-40 transition-[visibility] duration-300 ${menuAbierto ? 'visible' : 'invisible'}`}>
         <button
           type="button"
-          onClick={() => setMenuAbierto(true)}
-          aria-label="Abrir menú"
-          className="p-1.5 -mr-1.5 text-slate-600"
+          aria-label="Cerrar menú"
+          tabIndex={menuAbierto ? 0 : -1}
+          onClick={() => setMenuAbierto(false)}
+          className={`absolute inset-0 bg-black/70 transition-opacity duration-300 ${menuAbierto ? 'opacity-100' : 'opacity-0'}`}
+        />
+        <aside
+          className={`absolute inset-y-0 left-0 w-72 max-w-[85vw] bg-black border-r border-white/10 shadow-2xl flex flex-col transition-transform duration-300 ${
+            menuAbierto ? 'translate-x-0' : '-translate-x-full'
+          }`}
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6">
-            <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
-          </svg>
-        </button>
+          <ContenidoMenu
+            onNavegar={() => setMenuAbierto(false)}
+            accionCabecera={{ onClick: () => setMenuAbierto(false), etiqueta: 'Cerrar menú', icono: ICONO_CERRAR }}
+          />
+        </aside>
       </div>
 
-      {menuAbierto && (
-        <div className="md:hidden fixed inset-0 z-40 flex">
-          <button
-            type="button"
-            aria-label="Cerrar menú"
-            onClick={() => setMenuAbierto(false)}
-            className="absolute inset-0 bg-slate-900/30"
-          />
-          <aside className="relative w-64 h-full bg-white shadow-xl flex flex-col">
-            <ContenidoMenu onNavegar={() => setMenuAbierto(false)} />
-          </aside>
-        </div>
-      )}
-
-      <main className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-5 md:py-6 pt-20 md:pt-6 w-full">
+      <main
+        className={`min-w-0 px-4 sm:px-6 lg:px-8 py-5 md:py-6 pt-20 md:pt-6 transition-[margin] duration-200 ${
+          colapsado ? 'md:ml-[4.5rem]' : 'md:ml-64'
+        }`}
+      >
         <Outlet />
       </main>
 

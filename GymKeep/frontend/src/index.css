@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-slate-50 text-slate-900;
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900;
+  }
+
+  h1 {
+    @apply font-display italic font-bold uppercase tracking-wide;
+  }
 }

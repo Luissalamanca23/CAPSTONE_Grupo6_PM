@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api/client.js'
 import CategoriaEquipoBadge from '../components/CategoriaEquipoBadge.jsx'
 import Paginacion from '../components/Paginacion.jsx'
+import ConfirmarEliminar from '../components/ConfirmarEliminar.jsx'
 import StatCard from '../components/StatCard.jsx'
 import { usePaginacion } from '../utils/paginacion.js'
 import { formatearFechaHora, formatearMonto } from '../utils/formato.js'
@@ -200,7 +201,7 @@ export default function Costos() {
               <div key={equipo.id} className="flex items-center justify-between text-sm gap-3">
                 <Link
                   to={`/equipos/${equipo.id}`}
-                  className="font-medium text-slate-900 hover:text-emerald-700 flex items-center gap-2 min-w-0"
+                  className="font-medium text-slate-900 hover:text-brand-700 flex items-center gap-2 min-w-0"
                 >
                   <span className="truncate">{equipo.nombre}</span>
                   <CategoriaEquipoBadge categoria={equipo.categoria} />
@@ -226,19 +227,20 @@ export default function Costos() {
                 <th className="px-5 py-2">Técnico</th>
                 <th className="px-5 py-2">Qué se hizo</th>
                 <th className="px-5 py-2">Costo</th>
+                <th className="px-5 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {cargando && (
                 <tr>
-                  <td className="px-5 py-4 text-slate-400" colSpan={7}>
+                  <td className="px-5 py-4 text-slate-400" colSpan={8}>
                     Cargando...
                   </td>
                 </tr>
               )}
               {!cargando && mantenimientos.length === 0 && (
                 <tr>
-                  <td className="px-5 py-4 text-slate-400" colSpan={7}>
+                  <td className="px-5 py-4 text-slate-400" colSpan={8}>
                     {hayFiltrosActivos
                       ? 'Ningún mantenimiento coincide con estos filtros.'
                       : 'Todavía no hay mantenimientos registrados.'}
@@ -250,7 +252,7 @@ export default function Costos() {
                   <td className="px-5 py-2 whitespace-nowrap">{formatearFechaHora(m.fecha_fin || m.fecha_inicio)}</td>
                   <td className="px-5 py-2">
                     {m.equipo ? (
-                      <Link to={`/equipos/${m.equipo.id}`} className="font-medium text-slate-900 hover:text-emerald-700">
+                      <Link to={`/equipos/${m.equipo.id}`} className="font-medium text-slate-900 hover:text-brand-700">
                         {m.equipo.nombre}
                       </Link>
                     ) : (
@@ -264,6 +266,15 @@ export default function Costos() {
                   <td className="px-5 py-2">{m.tecnico || '—'}</td>
                   <td className="px-5 py-2 text-slate-600">{m.descripcion}</td>
                   <td className="px-5 py-2 whitespace-nowrap font-medium">{formatearMonto(m.costo_total)}</td>
+                  <td className="px-5 py-2">
+                    <ConfirmarEliminar
+                      titulo="Eliminar mantenimiento"
+                      nombre={`${m.equipo?.nombre || 'Máquina'} · ${m.tipo}`}
+                      aviso="Solo se borra este registro del historial de costos; el estado de la máquina no cambia."
+                      onConfirmar={() => api.eliminarMantenimiento(m.id)}
+                      onEliminado={() => setMantenimientos((lista) => lista.filter((x) => x.id !== m.id))}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>

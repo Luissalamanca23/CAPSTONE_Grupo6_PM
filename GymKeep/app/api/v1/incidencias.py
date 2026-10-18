@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.crud import equipamiento as crud_equipamiento
 from app.crud import incidencia as crud_incidencia
 from app.crud import tipo_falla as crud_tipo_falla
+from app.services import eliminacion
 from app.models.gymkeep import EstadoIncidencia, PrioridadIncidencia
 from app.schemas.incidencia import (
     IncidenciaCreate,
@@ -166,3 +167,21 @@ def actualizar_incidencia(incidencia_id: int, incidencia_in: IncidenciaUpdate, d
     if not incidencia:
         raise HTTPException(status_code=404, detail="Incidencia no encontrada.")
     return crud_incidencia.update_incidencia(db, incidencia, incidencia_in)
+
+
+@router.get("/{incidencia_id}/resumen-eliminacion")
+def resumen_eliminacion_incidencia(incidencia_id: int, db: Session = Depends(get_db)):
+    incidencia = crud_incidencia.get_incidencia(db, incidencia_id)
+    if not incidencia:
+        raise HTTPException(status_code=404, detail="Incidencia no encontrada.")
+    return eliminacion.respuesta_resumen(
+        "incidencia", f"Reporte #{incidencia_id}", eliminacion.resumen_incidencia(db, incidencia_id)
+    )
+
+
+@router.delete("/{incidencia_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_incidencia(incidencia_id: int, db: Session = Depends(get_db)):
+    """Elimina un reporte. Los mantenimientos que lo mencionaban se conservan, sin vinculo."""
+    if not crud_incidencia.get_incidencia(db, incidencia_id):
+        raise HTTPException(status_code=404, detail="Incidencia no encontrada.")
+    eliminacion.eliminar_incidencia(db, incidencia_id)

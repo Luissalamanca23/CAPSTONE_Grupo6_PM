@@ -80,7 +80,7 @@ export default function UsoMaquinaDetalle() {
 
   return (
     <div className="space-y-6">
-      <Link to="/uso" className="text-sm text-emerald-700 hover:underline">
+      <Link to="/uso" className="text-sm text-brand-700 hover:underline">
         ← Uso de máquinas
       </Link>
 
@@ -133,7 +133,7 @@ export default function UsoMaquinaDetalle() {
               </span>
             )}
             {r.camaras.map((c) => (
-              <Link key={c.id} to={`/camaras/${c.id}`} className="text-xs text-emerald-700 hover:underline">
+              <Link key={c.id} to={`/camaras/${c.id}`} className="text-xs text-brand-700 hover:underline">
                 Ver cámara {c.codigo}
               </Link>
             ))}
@@ -147,7 +147,7 @@ export default function UsoMaquinaDetalle() {
               </>
             )}
           </p>
-          <Link to={`/equipos/${r.equipo_id}`} className="inline-block text-sm text-emerald-700 hover:underline">
+          <Link to={`/equipos/${r.equipo_id}`} className="inline-block text-sm text-brand-700 hover:underline">
             Ver ficha del equipo (QR, datos y estado) →
           </Link>
         </div>
@@ -180,7 +180,7 @@ export default function UsoMaquinaDetalle() {
               onClick={() => setPestana(p.clave)}
               className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 -mb-px ${
                 pestana === p.clave
-                  ? 'border-emerald-600 text-emerald-700'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-slate-500 hover:text-slate-700'
               }`}
             >

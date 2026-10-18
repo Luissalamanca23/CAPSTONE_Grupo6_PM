@@ -68,7 +68,15 @@ export const api = {
   crearEquipo: (datos) => request('/equipamiento/', { method: 'POST', body: JSON.stringify(datos) }),
   actualizarEquipo: (id, datos) =>
     request(`/equipamiento/${id}`, { method: 'PATCH', body: JSON.stringify(datos) }),
-  eliminarEquipo: (id) => request(`/equipamiento/${id}`, { method: 'DELETE' }),
+  // Eliminacion desde el panel: la API borra en cascada con `forzar=true` (el dialogo de
+  // confirmacion ya mostro lo que se llevaria, via resumenEliminacion).
+  resumenEliminacion: (recurso, id) => request(`/${recurso}/${id}/resumen-eliminacion`),
+  eliminarEquipo: (id) => request(`/equipamiento/${id}?forzar=true`, { method: 'DELETE' }),
+  eliminarSucursal: (id) => request(`/sucursales/${id}?forzar=true`, { method: 'DELETE' }),
+  eliminarZona: (id) => request(`/zonas/${id}`, { method: 'DELETE' }),
+  eliminarCamara: (id) => request(`/camaras/${id}?forzar=true`, { method: 'DELETE' }),
+  eliminarIncidencia: (id) => request(`/incidencias/${id}`, { method: 'DELETE' }),
+  eliminarMantenimiento: (id) => request(`/mantenimientos/${id}`, { method: 'DELETE' }),
   regenerarQr: (id) => request(`/equipamiento/${id}/regenerar-qr`, { method: 'POST' }),
   urlCodigoQr: (id) => `${BASE_URL}/equipamiento/${id}/codigo-qr`,
 

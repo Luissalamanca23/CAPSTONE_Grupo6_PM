@@ -58,7 +58,7 @@ function TarjetaMaquina({ maquina }) {
   return (
     <Link
       to={`/uso/${maquina.equipo_id}`}
-      className="group bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden hover:border-emerald-400 hover:shadow transition"
+      className="group bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden hover:border-brand-400 hover:shadow transition"
     >
       <div className="relative">
         <FotoMaquina maquina={maquina} className="w-full aspect-[4/3]" />
@@ -68,7 +68,7 @@ function TarjetaMaquina({ maquina }) {
       </div>
       <div className="p-4 space-y-3">
         <div>
-          <p className="font-semibold text-slate-900 group-hover:text-emerald-700">{maquina.nombre}</p>
+          <p className="font-semibold text-slate-900 group-hover:text-brand-700">{maquina.nombre}</p>
           <div className="flex items-center gap-2 mt-1">
             <span className="text-xs text-slate-500">{maquina.codigo_activo}</span>
             <CategoriaEquipoBadge categoria={maquina.categoria} />
@@ -179,7 +179,7 @@ export default function UsoMaquinas() {
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
           placeholder="Buscar por nombre, código o zona"
-          className="w-full sm:w-72 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full sm:w-72 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
         />
         <select
           value={orden}

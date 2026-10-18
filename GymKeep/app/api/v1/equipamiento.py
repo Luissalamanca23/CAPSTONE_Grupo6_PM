@@ -12,6 +12,7 @@ from app.crud import equipamiento as crud_equipamiento
 from app.crud import sucursal as crud_sucursal
 from app.crud import zona as crud_zona
 from app.schemas.equipamiento import EquipoCreate, EquipoOut, EquipoUpdate, QrEquipoOut
+from app.services import eliminacion
 
 router = APIRouter()
 
@@ -100,10 +101,17 @@ def regenerar_codigo_qr(equipo_id: int, db: Session = Depends(get_db)):
 
 @router.patch("/{equipo_id}", response_model=EquipoOut)
 def actualizar_equipo(equipo_id: int, equipo_in: EquipoUpdate, db: Session = Depends(get_db)):
-    """Actualiza datos de un equipo (estado, zona, etc.)."""
+    """Actualiza datos de un equipo (nombre, codigo, categoria, zona, estado, etc.)."""
     equipo = crud_equipamiento.get_equipo(db, equipo_id)
     if not equipo:
         raise HTTPException(status_code=404, detail="Equipo no encontrado.")
+
+    if equipo_in.codigo_activo and equipo_in.codigo_activo != equipo.codigo_activo:
+        if crud_equipamiento.get_equipo_by_codigo_activo(db, equipo.sucursal_id, equipo_in.codigo_activo):
+            raise HTTPException(status_code=400, detail="Ya existe otro equipo con ese codigo de activo en la sucursal.")
+    if equipo_in.numero_serie and equipo_in.numero_serie != equipo.numero_serie:
+        if crud_equipamiento.get_equipo_by_serie(db, equipo_in.numero_serie):
+            raise HTTPException(status_code=400, detail="Ya existe otro equipo con ese numero de serie.")
 
     if equipo_in.zona_id is not None:
         zona = crud_zona.get_zona(db, equipo_in.zona_id)
@@ -113,18 +121,28 @@ def actualizar_equipo(equipo_id: int, equipo_in: EquipoUpdate, db: Session = Dep
     return crud_equipamiento.update_equipo(db, equipo, equipo_in)
 
 
-@router.delete("/{equipo_id}", status_code=status.HTTP_204_NO_CONTENT)
-def eliminar_equipo(equipo_id: int, db: Session = Depends(get_db)):
-    """Elimina un equipo del sistema (junto con su historial de QR). Si el equipo ya tiene
-    incidencias reportadas no se puede eliminar (se conserva por auditoria): marquelo como
-    'retirado' en su lugar con PATCH."""
+@router.get("/{equipo_id}/resumen-eliminacion")
+def resumen_eliminacion_equipo(equipo_id: int, db: Session = Depends(get_db)):
+    """Que se borraria junto con la maquina (para el dialogo de confirmacion del panel)."""
     equipo = crud_equipamiento.get_equipo(db, equipo_id)
     if not equipo:
         raise HTTPException(status_code=404, detail="Equipo no encontrado.")
-    if crud_equipamiento.tiene_incidencias(db, equipo):
+    return eliminacion.respuesta_resumen("maquina", equipo.nombre, eliminacion.resumen_equipo(db, equipo_id))
+
+
+@router.delete("/{equipo_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_equipo(equipo_id: int, forzar: bool = Query(False), db: Session = Depends(get_db)):
+    """Elimina un equipo. Sin `forzar`, si ya tiene reportes, mantenimientos o sesiones de uso
+    no se borra (se conserva por auditoria; marquelo 'retirado' con PATCH). Con `forzar=true`
+    (el panel lo envia tras confirmar) se borra junto con todo su historial, QR y fotos."""
+    equipo = crud_equipamiento.get_equipo(db, equipo_id)
+    if not equipo:
+        raise HTTPException(status_code=404, detail="Equipo no encontrado.")
+    historial = {k: v for k, v in eliminacion.resumen_equipo(db, equipo_id).items() if k != "codigos_qr"}
+    if not forzar and sum(historial.values()):
         raise HTTPException(
             status_code=400,
             detail="No se puede eliminar un equipo con incidencias registradas. "
-            "Cambie su estado a 'retirado' en su lugar.",
+            "Cambie su estado a 'retirado' en su lugar o confirme la eliminacion en cascada.",
         )
-    crud_equipamiento.delete_equipo(db, equipo)
+    eliminacion.eliminar_equipo(db, equipo_id)

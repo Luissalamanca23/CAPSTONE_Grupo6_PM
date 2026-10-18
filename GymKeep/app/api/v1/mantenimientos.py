@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.crud import equipamiento as crud_equipamiento
 from app.crud import mantenimiento as crud_mantenimiento
+from app.models.gymkeep import Mantenimiento
+from app.services import eliminacion
 from app.schemas.mantenimiento import MantenimientoCreate, MantenimientoOut
 
 router = APIRouter()
@@ -47,3 +49,11 @@ def crear_mantenimiento(mantenimiento_in: MantenimientoCreate, db: Session = Dep
         incidencia_ids=mantenimiento_in.incidencia_ids,
         costo_total=mantenimiento_in.costo_total,
     )
+
+
+@router.delete("/{mantenimiento_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_mantenimiento(mantenimiento_id: int, db: Session = Depends(get_db)):
+    """Elimina un registro del historial de mantenimientos (no cambia el estado del equipo)."""
+    if not db.get(Mantenimiento, mantenimiento_id):
+        raise HTTPException(status_code=404, detail="Mantenimiento no encontrado.")
+    eliminacion.eliminar_mantenimiento(db, mantenimiento_id)

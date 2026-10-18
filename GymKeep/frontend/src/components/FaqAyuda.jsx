@@ -47,7 +47,7 @@ export default function FaqAyuda() {
         onClick={() => setAbierto(true)}
         title="Ayuda y preguntas frecuentes"
         aria-label="Ayuda y preguntas frecuentes"
-        className="fixed bottom-5 right-5 z-40 w-11 h-11 rounded-full bg-emerald-600 text-white shadow-lg hover:bg-emerald-700 flex items-center justify-center text-lg font-bold"
+        className="fixed bottom-5 right-5 z-20 w-11 h-11 rounded-full bg-brand-600 text-white shadow-lg hover:bg-brand-700 flex items-center justify-center text-lg font-bold"
       >
         ?
       </button>

@@ -6,6 +6,7 @@ import PrioridadBadge from '../components/PrioridadBadge.jsx'
 import TipoFallaBadge from '../components/TipoFallaBadge.jsx'
 import CategoriaBadge from '../components/CategoriaBadge.jsx'
 import Paginacion from '../components/Paginacion.jsx'
+import ConfirmarEliminar from '../components/ConfirmarEliminar.jsx'
 import { formatearFechaHora } from '../utils/formato.js'
 import { getSaludEquipo } from '../utils/saludEquipo.js'
 
@@ -153,7 +154,7 @@ export default function Incidencias() {
               onClick={() => elegirPreset(opcion.valor)}
               className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
                 presetFecha === opcion.valor
-                  ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                  ? 'border-brand-600 bg-brand-50 text-brand-700'
                   : 'border-slate-200 text-slate-600 hover:border-slate-300'
               }`}
             >
@@ -247,19 +248,20 @@ export default function Incidencias() {
                 <th className="px-4 py-2">Prioridad</th>
                 <th className="px-4 py-2">Estado</th>
                 <th className="px-4 py-2">Cambiar estado</th>
+                <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {cargando && (
                 <tr>
-                  <td className="px-4 py-6 text-slate-400 text-center" colSpan={8}>
+                  <td className="px-4 py-6 text-slate-400 text-center" colSpan={9}>
                     Cargando...
                   </td>
                 </tr>
               )}
               {!cargando && incidencias.length === 0 && (
                 <tr>
-                  <td className="px-4 py-6 text-slate-400 text-center" colSpan={8}>
+                  <td className="px-4 py-6 text-slate-400 text-center" colSpan={9}>
                     {hayFiltrosActivos
                       ? 'No hay incidencias que coincidan con estos filtros.'
                       : 'Todavía no hay incidencias registradas.'}
@@ -275,7 +277,7 @@ export default function Incidencias() {
                       {incidencia.equipo ? (
                         <Link
                           to={`/equipos/${incidencia.equipo.id}`}
-                          className="font-medium text-slate-900 hover:text-emerald-700 inline-flex items-center gap-1.5"
+                          className="font-medium text-slate-900 hover:text-brand-700 inline-flex items-center gap-1.5"
                         >
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${salud.punto}`} />
                           {incidencia.equipo.nombre}
@@ -309,6 +311,18 @@ export default function Incidencias() {
                           </option>
                         ))}
                       </select>
+                    </td>
+                    <td className="px-4 py-2">
+                      <ConfirmarEliminar
+                        titulo="Eliminar reporte"
+                        nombre={`${incidencia.equipo?.nombre || 'Equipo'} · ${incidencia.tipo_falla?.nombre || 'falla'}`}
+                        cargarResumen={() => api.resumenEliminacion('incidencias', incidencia.id)}
+                        onConfirmar={() => api.eliminarIncidencia(incidencia.id)}
+                        onEliminado={() => {
+                          setIncidencias((lista) => lista.filter((i) => i.id !== incidencia.id))
+                          setTotal((t) => Math.max(0, t - 1))
+                        }}
+                      />
                     </td>
                   </tr>
                 )

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../../api/client.js'
 import { visionApi } from '../../api/vision.js'
+import ConfirmarEliminar from '../../components/ConfirmarEliminar.jsx'
 import { haceCuanto } from './uso.js'
 import usePolling from './usePolling.js'
 
@@ -39,7 +40,7 @@ function TarjetaCamara({ camara, marca }) {
   return (
     <Link
       to={`/camaras/${camara.id}`}
-      className="group bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden hover:border-emerald-400 hover:shadow transition"
+      className="group bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden hover:border-brand-400 hover:shadow transition"
     >
       <div className="relative bg-slate-900 aspect-video">
         {camara.tiene_cuadro && !falloImagen ? (
@@ -57,7 +58,7 @@ function TarjetaCamara({ camara, marca }) {
         </div>
       </div>
       <div className="p-4">
-        <p className="font-semibold text-slate-900 group-hover:text-emerald-700">{camara.nombre}</p>
+        <p className="font-semibold text-slate-900 group-hover:text-brand-700">{camara.nombre}</p>
         <p className="text-xs text-slate-500 mt-0.5">
           {camara.codigo} · {camara.maquinas} máquina{camara.maquinas === 1 ? '' : 's'} con zona
         </p>
@@ -147,7 +148,7 @@ function FormularioCamara({ onCreada }) {
         <input placeholder="rtsp://…" className={estiloCampo} {...campo('rtsp_url')} />
       </label>
       <div className="sm:col-span-2 lg:col-span-5 flex items-center gap-3">
-        <button type="submit" className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
+        <button type="submit" className="px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700">
           Guardar cámara
         </button>
         {(error || errorCarga) && <p className="text-sm text-red-600">{error || errorCarga}</p>}
@@ -182,7 +183,7 @@ export default function Camaras() {
         <button
           type="button"
           onClick={() => setCreando(!creando)}
-          className="self-start px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700"
+          className="self-start px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700"
         >
           {creando ? 'Cancelar' : 'Agregar cámara'}
         </button>
@@ -195,7 +196,20 @@ export default function Camaras() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
         {(camaras || []).map((c) => (
-          <TarjetaCamara key={c.id} camara={c} marca={marca} />
+          <div key={c.id} className="relative">
+            <TarjetaCamara camara={c} marca={marca} />
+            <div className="absolute top-2 right-2">
+              <ConfirmarEliminar
+                titulo="Eliminar cámara"
+                nombre={c.nombre}
+                aviso="Las zonas dibujadas se borran con la cámara. Si el módulo de visión sigue enviando datos con este código, deténlo o la cámara no volverá a aparecer."
+                cargarResumen={() => api.resumenEliminacion('camaras', c.id)}
+                onConfirmar={() => api.eliminarCamara(c.id)}
+                onEliminado={() => cargar()}
+                className="px-2 py-1 rounded-md bg-white/90 text-xs font-medium text-red-600 shadow hover:bg-white"
+              />
+            </div>
+          </div>
         ))}
       </div>
     </div>

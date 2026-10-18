@@ -113,8 +113,10 @@ export default function Reportar() {
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
-          <p className="text-2xl font-bold text-emerald-700">GymKeep</p>
-          <p className="text-sm text-slate-500">Reporte de falla de equipamiento</p>
+          <div className="bg-black rounded-xl py-4">
+            <img src="/logo.png" alt="GymKeep" className="mx-auto w-40 h-auto" />
+          </div>
+          <p className="text-sm text-slate-500 mt-3">Reporte de falla de equipamiento</p>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
@@ -131,7 +133,7 @@ export default function Reportar() {
 
           {!cargando && !errorCarga && enviado && (
             <div className="text-center space-y-2 py-4">
-              <p className="text-emerald-600 font-semibold text-lg">¡Gracias por tu reporte!</p>
+              <p className="text-brand-600 font-semibold text-lg">¡Gracias por tu reporte!</p>
               <p className="text-sm text-slate-500">
                 Registramos la falla en <strong>{equipo.nombre}</strong>.{' '}
                 {funcional === false
@@ -140,7 +142,7 @@ export default function Reportar() {
               </p>
               <button
                 onClick={reiniciar}
-                className="mt-3 text-sm text-emerald-700 font-medium underline"
+                className="mt-3 text-sm text-brand-700 font-medium underline"
               >
                 Enviar otro reporte
               </button>
@@ -168,7 +170,7 @@ export default function Reportar() {
                         onClick={() => elegirCategoria(c.clave)}
                         className={`px-2 py-3 rounded-lg text-xs font-medium border-2 transition-colors ${
                           seleccionado
-                            ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                            ? 'border-brand-600 bg-brand-50 text-brand-700'
                             : 'border-slate-200 text-slate-600 hover:border-slate-300'
                         }`}
                       >
@@ -194,7 +196,7 @@ export default function Reportar() {
                           onClick={() => setTipoFallaSeleccionado(tipo.codigo)}
                           className={`px-3 py-3 rounded-lg text-sm font-medium border-2 transition-colors ${
                             seleccionado
-                              ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                              ? 'border-brand-600 bg-brand-50 text-brand-700'
                               : 'border-slate-200 text-slate-600 hover:border-slate-300'
                           }`}
                         >
@@ -236,7 +238,7 @@ export default function Reportar() {
                           onClick={() => setGravedad(g.valor)}
                           className={`px-3 py-3 rounded-lg text-sm font-medium border-2 transition-colors ${
                             seleccionado
-                              ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                              ? 'border-brand-600 bg-brand-50 text-brand-700'
                               : 'border-slate-200 text-slate-600 hover:border-slate-300'
                           }`}
                         >
@@ -261,7 +263,7 @@ export default function Reportar() {
                       onClick={() => setFuncional(true)}
                       className={`px-3 py-3 rounded-lg text-sm font-medium border-2 transition-colors ${
                         funcional === true
-                          ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                          ? 'border-brand-600 bg-brand-50 text-brand-700'
                           : 'border-slate-200 text-slate-600 hover:border-slate-300'
                       }`}
                     >
@@ -307,7 +309,7 @@ export default function Reportar() {
               <button
                 type="submit"
                 disabled={enviando || !listo}
-                className="w-full bg-emerald-600 text-white rounded-md px-4 py-2.5 text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-brand-600 text-white rounded-md px-4 py-2.5 text-sm font-semibold hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {enviando ? 'Enviando...' : 'Enviar reporte'}
               </button>

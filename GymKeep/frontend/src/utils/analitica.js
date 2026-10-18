@@ -12,6 +12,14 @@ export const UMBRAL_HORAS_SIN_ATENCION = 48 // incidencia urgente/alta abierta h
 export const UMBRAL_REINCIDENCIA = 3 // 3 o mas incidencias de una maquina en 30 dias
 export const UMBRAL_HORAS_PREVENTIVO = 200 // 200 h de uso desde la ultima mantencion
 
+// Demanda de las maquinas (seccion "Demanda" del panel).
+export const HORAS_APERTURA_DIA = 16 // horas al dia que abre el gimnasio (para calcular la ocupacion)
+export const UMBRAL_DEMANDA_ALTA = 1.5 // maquina que se usa 1,5 veces o mas el promedio del gimnasio
+export const UMBRAL_DEMANDA_BAJA = 0.45 // maquina que se usa menos de la mitad del promedio
+export const UMBRAL_DEMANDA_CATEGORIA_ALTA = 1.15
+export const UMBRAL_DEMANDA_CATEGORIA_BAJA = 0.6
+const DIAS_MINIMOS_DEMANDA = 30 // con menos de un mes de uso no hay muestra para comparar
+
 export const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 // Bloques de 4 horas para el mapa de calor (hora local de quien mira el panel).
 export const BLOQUES_HORA = ['0–4 h', '4–8 h', '8–12 h', '12–16 h', '16–20 h', '20–24 h']
@@ -286,4 +294,86 @@ export function escalaBonita(maximo) {
   const intervalos = Math.max(Math.ceil(objetivo / paso), 2)
   const marcas = Array.from({ length: intervalos + 1 }, (_, i) => i * paso)
   return { tope: marcas[marcas.length - 1], marcas }
+}
+
+/**
+ * Demanda de las maquinas: cuales se ocupan mas y de que tipo conviene sumar mas unidades (para
+ * ampliar el gimnasio o abrir otro local). Usa las horas de uso acumuladas desde que se instalo
+ * cada maquina, divididas por los dias que lleva instalada.
+ * @returns {null | {maquinas, categorias, sugeridas, pocaDemanda, promedioHorasDia, totalHoras, cantidad}}
+ */
+export function calcularDemanda({ equipos, uso, etiquetasCategoria = {} }, ahora = new Date()) {
+  const inicioPorEquipo = new Map(equipos.map((e) => [e.id, e.fecha_instalacion || e.fecha_adquisicion]))
+  const filas = []
+  for (const m of uso || []) {
+    const inicio = inicioPorEquipo.get(m.equipo_id)
+    if (!inicio) continue
+    const dias = (ahora.getTime() - new Date(`${inicio}T00:00:00`).getTime()) / MS_DIA
+    if (!(dias >= DIAS_MINIMOS_DEMANDA)) continue
+    const horas = aNumero(m.horas_uso)
+    const horasPorDia = horas / dias
+    filas.push({
+      id: m.equipo_id,
+      etiqueta: m.nombre,
+      categoria: m.categoria || null,
+      horas,
+      horasPorDia,
+      ocupacion: Math.min(1, horasPorDia / HORAS_APERTURA_DIA),
+    })
+  }
+  const totalHoras = filas.reduce((total, f) => total + f.horas, 0)
+  if (filas.length === 0 || totalHoras === 0) return null
+
+  const media = promedio(filas.map((f) => f.horasPorDia))
+  const maquinas = filas
+    .map((f) => {
+      const indice = f.horasPorDia / media
+      const nivel = indice >= UMBRAL_DEMANDA_ALTA ? 'alta' : indice <= UMBRAL_DEMANDA_BAJA ? 'baja' : 'normal'
+      return { ...f, indice, nivel }
+    })
+    .sort((a, b) => b.horasPorDia - a.horasPorDia)
+
+  const porCategoria = new Map()
+  for (const f of maquinas) {
+    const clave = f.categoria || '__sin__'
+    const actual = porCategoria.get(clave) || {
+      id: clave,
+      etiqueta: etiquetasCategoria[f.categoria] || f.categoria || 'Sin categoría',
+      maquinas: 0,
+      horas: 0,
+      sumaHorasPorDia: 0,
+    }
+    actual.maquinas += 1
+    actual.horas += f.horas
+    actual.sumaHorasPorDia += f.horasPorDia
+    porCategoria.set(clave, actual)
+  }
+  const categorias = Array.from(porCategoria.values())
+    .map((c) => {
+      const horasPorDiaPorMaquina = c.sumaHorasPorDia / c.maquinas
+      const indice = horasPorDiaPorMaquina / media
+      return {
+        id: c.id,
+        etiqueta: c.etiqueta,
+        maquinas: c.maquinas,
+        horas: c.horas,
+        horasPorDiaPorMaquina,
+        indice,
+        porcentajeUso: Math.round((c.horas / totalHoras) * 100),
+        porcentajeFlota: Math.round((c.maquinas / maquinas.length) * 100),
+        nivel:
+          indice >= UMBRAL_DEMANDA_CATEGORIA_ALTA ? 'alta' : indice <= UMBRAL_DEMANDA_CATEGORIA_BAJA ? 'baja' : 'normal',
+      }
+    })
+    .sort((a, b) => b.horasPorDiaPorMaquina - a.horasPorDiaPorMaquina)
+
+  return {
+    maquinas,
+    categorias,
+    sugeridas: maquinas.filter((f) => f.nivel === 'alta').slice(0, 6),
+    pocaDemanda: maquinas.filter((f) => f.nivel === 'baja').slice(-6).reverse(),
+    promedioHorasDia: media,
+    totalHoras,
+    cantidad: maquinas.length,
+  }
 }

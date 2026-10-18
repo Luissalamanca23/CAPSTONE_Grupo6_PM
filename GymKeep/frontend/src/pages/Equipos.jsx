@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client.js'
+import { visionApi } from '../api/vision.js'
+import { CampoFoto, Miniatura, reducirImagen } from '../components/FotoReferencia.jsx'
+import PinDialogo from './vision/PinDialogo.jsx'
 import EstadoBadge from '../components/EstadoBadge.jsx'
-import CategoriaEquipoBadge, { CATEGORIAS_EQUIPO } from '../components/CategoriaEquipoBadge.jsx'
+import CategoriaEquipoBadge, { CATEGORIAS_EQUIPO, esCategoriaVigente } from '../components/CategoriaEquipoBadge.jsx'
+import EditarEquipo from '../components/EditarEquipo.jsx'
 import Paginacion from '../components/Paginacion.jsx'
+import ConfirmarEliminar from '../components/ConfirmarEliminar.jsx'
 import { usePaginacion } from '../utils/paginacion.js'
 import { getSaludEquipo } from '../utils/saludEquipo.js'
 
@@ -57,6 +62,17 @@ export default function Equipos() {
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
   const [filtroCategoria, setFiltroCategoria] = useState('')
+  const [foto, setFoto] = useState(null) // foto de referencia de la maquina que se esta creando
+  const [aviso, setAviso] = useState(null)
+  const [conFoto, setConFoto] = useState(new Set()) // ids de maquinas que ya tienen foto
+
+  // Una sola llamada indica cuales maquinas tienen foto (evita pedir una imagen por fila).
+  function cargarFotos() {
+    visionApi
+      .listarMaquinas()
+      .then((lista) => setConFoto(new Set(lista.filter((m) => m.tiene_foto).map((m) => m.equipo_id))))
+      .catch(() => {}) // sin fotos las filas muestran el icono; no es un error de la pagina
+  }
 
   function cargarEquipos() {
     setCargando(true)
@@ -68,6 +84,7 @@ export default function Equipos() {
   }
 
   useEffect(cargarEquipos, [])
+  useEffect(cargarFotos, [])
 
   useEffect(() => {
     api
@@ -97,7 +114,9 @@ export default function Equipos() {
     const texto = busqueda.trim().toLowerCase()
     return equipos.filter((equipo) => {
       if (filtroEstado && equipo.estado !== filtroEstado) return false
-      if (filtroCategoria && equipo.categoria !== filtroCategoria) return false
+      if (filtroCategoria === '__pendiente__') {
+        if (esCategoriaVigente(equipo.categoria)) return false
+      } else if (filtroCategoria && equipo.categoria !== filtroCategoria) return false
       if (!texto) return true
       const campos = [equipo.nombre, equipo.codigo_activo, equipo.marca, equipo.modelo, equipo.sucursal?.nombre, equipo.zona?.nombre]
       return campos.some((campo) => campo && campo.toLowerCase().includes(texto))
@@ -110,15 +129,26 @@ export default function Equipos() {
     evento.preventDefault()
     setEnviando(true)
     setError(null)
+    setAviso(null)
     try {
-      await api.crearEquipo({
+      const creado = await api.crearEquipo({
         ...form,
         sucursal_id: Number(form.sucursal_id),
         zona_id: form.zona_id ? Number(form.zona_id) : null,
       })
+      if (foto) {
+        // La maquina ya existe: si la foto falla (PIN cancelado, formato raro) no se pierde nada.
+        try {
+          await visionApi.subirFoto(creado.id, await reducirImagen(foto))
+        } catch (err) {
+          setAviso(`La máquina se creó, pero la foto no se pudo subir (${err.message}). Puedes subirla desde su detalle.`)
+        }
+      }
       setForm((f) => ({ ...FORM_INICIAL, sucursal_id: f.sucursal_id }))
+      setFoto(null)
       setMostrarFormulario(false)
       cargarEquipos()
+      cargarFotos()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -142,7 +172,7 @@ export default function Equipos() {
         <button
           onClick={() => setMostrarFormulario((v) => !v)}
           disabled={sucursales.length === 0}
-          className="bg-emerald-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
+          className="bg-brand-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50"
         >
           {mostrarFormulario ? 'Cancelar' : '+ Registrar equipo'}
         </button>
@@ -217,10 +247,11 @@ export default function Equipos() {
           </label>
           <Campo etiqueta="Marca" valor={form.marca} onChange={(v) => setForm({ ...form, marca: v })} />
           <Campo etiqueta="Modelo" valor={form.modelo} onChange={(v) => setForm({ ...form, modelo: v })} />
+          <CampoFoto archivo={foto} onChange={setFoto} className="sm:col-span-2 lg:col-span-5" />
           <button
             type="submit"
             disabled={enviando}
-            className="bg-emerald-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 sm:col-span-2 lg:col-span-1"
+            className="bg-brand-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50 sm:col-span-2 lg:col-span-1"
           >
             {enviando ? 'Guardando...' : 'Guardar'}
           </button>
@@ -228,6 +259,7 @@ export default function Equipos() {
       )}
 
       {error && <p className="text-red-600 text-sm">{error}</p>}
+      {aviso && <p className="text-amber-700 text-sm">{aviso}</p>}
 
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 flex flex-wrap gap-2 items-center">
         <input
@@ -255,6 +287,7 @@ export default function Equipos() {
           className="border border-slate-300 rounded-md text-sm px-2.5 py-1.5"
         >
           <option value="">Toda categoría</option>
+          <option value="__pendiente__">Por reclasificar / sin categoría</option>
           {CATEGORIAS_EQUIPO.map((c) => (
             <option key={c.valor} value={c.valor}>
               {c.etiqueta}
@@ -314,10 +347,15 @@ export default function Equipos() {
                     <img src={api.urlCodigoQr(equipo.id)} alt="QR" className="w-10 h-10 border border-slate-200 rounded" />
                   </td>
                   <td className="px-5 py-2">
-                    <Link to={`/equipos/${equipo.id}`} className="font-medium text-slate-900 hover:text-emerald-700">
-                      {equipo.nombre}
-                    </Link>
-                    <p className="text-xs text-slate-400 font-mono">{equipo.codigo_activo}</p>
+                    <div className="flex items-center gap-3">
+                      <Miniatura equipoId={equipo.id} nombre={equipo.nombre} tiene={conFoto.has(equipo.id)} />
+                      <div>
+                        <Link to={`/equipos/${equipo.id}`} className="font-medium text-slate-900 hover:text-brand-700">
+                          {equipo.nombre}
+                        </Link>
+                        <p className="text-xs text-slate-400 font-mono">{equipo.codigo_activo}</p>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-5 py-2">
                     <CategoriaEquipoBadge categoria={equipo.categoria} />
@@ -347,7 +385,7 @@ export default function Equipos() {
                   </td>
                   <td className="px-5 py-2">
                     <div className="flex items-center gap-3">
-                      <Link to={`/equipos/${equipo.id}`} className="text-xs font-medium text-emerald-700 underline">
+                      <Link to={`/equipos/${equipo.id}`} className="text-xs font-medium text-brand-700 underline">
                         Ver detalle
                       </Link>
                       {(equipo.incidencias_abiertas ?? 0) > 0 && (
@@ -359,6 +397,17 @@ export default function Equipos() {
                           Resolver ({equipo.incidencias_abiertas})
                         </Link>
                       )}
+                      <EditarEquipo
+                        equipo={equipo}
+                        onGuardado={(editado) => setEquipos((lista) => lista.map((e) => (e.id === editado.id ? editado : e)))}
+                      />
+                      <ConfirmarEliminar
+                        titulo="Eliminar máquina"
+                        nombre={equipo.nombre}
+                        cargarResumen={() => api.resumenEliminacion('equipamiento', equipo.id)}
+                        onConfirmar={() => api.eliminarEquipo(equipo.id)}
+                        onEliminado={() => setEquipos((lista) => lista.filter((e) => e.id !== equipo.id))}
+                      />
                     </div>
                   </td>
                 </tr>
@@ -369,6 +418,7 @@ export default function Equipos() {
         </div>
         <Paginacion paginacion={paginacion} />
       </div>
+      <PinDialogo />
     </div>
   )
 }

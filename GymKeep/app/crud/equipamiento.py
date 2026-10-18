@@ -56,6 +56,10 @@ def get_equipo_by_codigo_activo(db: Session, sucursal_id: int, codigo_activo: st
     )
 
 
+def get_equipo_by_serie(db: Session, numero_serie: str) -> Optional[Equipo]:
+    return db.query(Equipo).filter(Equipo.numero_serie == numero_serie).first()
+
+
 def create_equipo(db: Session, equipo_in: EquipoCreate) -> Equipo:
     """Registra el equipo y le emite automaticamente su primer QR activo (UUID seguro)."""
     equipo = Equipo(**equipo_in.model_dump())
@@ -72,6 +76,10 @@ def create_equipo(db: Session, equipo_in: EquipoCreate) -> Equipo:
 
 def update_equipo(db: Session, equipo: Equipo, equipo_in: EquipoUpdate) -> Equipo:
     datos = equipo_in.model_dump(exclude_unset=True)
+    # Columnas NOT NULL: un null explicito (campo borrado en un formulario) se ignora.
+    for campo in ("codigo_activo", "nombre", "estado"):
+        if datos.get(campo) is None:
+            datos.pop(campo, None)
     nuevo_estado = datos.get("estado")
 
     for campo, valor in datos.items():

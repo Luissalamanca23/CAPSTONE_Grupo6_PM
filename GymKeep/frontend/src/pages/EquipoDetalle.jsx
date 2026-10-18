@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client.js'
 import EstadoBadge from '../components/EstadoBadge.jsx'
 import CategoriaEquipoBadge from '../components/CategoriaEquipoBadge.jsx'
@@ -7,6 +7,9 @@ import CategoriaBadge from '../components/CategoriaBadge.jsx'
 import PrioridadBadge from '../components/PrioridadBadge.jsx'
 import TipoFallaBadge from '../components/TipoFallaBadge.jsx'
 import Paginacion from '../components/Paginacion.jsx'
+import { FotoEditable } from '../components/FotoReferencia.jsx'
+import EditarEquipo from '../components/EditarEquipo.jsx'
+import ConfirmarEliminar from '../components/ConfirmarEliminar.jsx'
 import { formatearFechaHora, formatearMonto } from '../utils/formato.js'
 import { usePaginacion } from '../utils/paginacion.js'
 import { getSaludEquipo } from '../utils/saludEquipo.js'
@@ -19,6 +22,7 @@ const ESTADOS_INCIDENCIA_HIST = ['pendiente', 'en_proceso', 'resuelta', 'descart
 
 export default function EquipoDetalle() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
 
   const [equipo, setEquipo] = useState(null)
@@ -169,7 +173,7 @@ export default function EquipoDetalle() {
   return (
     <div className="space-y-6">
       <div>
-        <Link to="/equipos" className="text-sm text-emerald-700 font-medium">
+        <Link to="/equipos" className="text-sm text-brand-700 font-medium">
           ← Volver a equipamiento
         </Link>
       </div>
@@ -293,7 +297,7 @@ export default function EquipoDetalle() {
           <button
             type="submit"
             disabled={enviandoMant || !listoMant}
-            className="bg-emerald-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
+            className="bg-brand-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50"
           >
             {enviandoMant ? 'Guardando...' : 'Guardar mantenimiento'}
           </button>
@@ -302,6 +306,7 @@ export default function EquipoDetalle() {
 
       <div className="flex flex-col sm:flex-row gap-6">
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 sm:w-72 shrink-0 space-y-4">
+          <FotoEditable equipoId={equipo.id} nombre={equipo.nombre} />
           <div>
             <h1 className="text-xl font-bold text-slate-900">{equipo.nombre}</h1>
             <p className="text-sm text-slate-500">
@@ -312,6 +317,18 @@ export default function EquipoDetalle() {
               <EstadoBadge estado={equipo.estado} />
               <CategoriaEquipoBadge categoria={equipo.categoria} />
             </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <EditarEquipo equipo={equipo} etiqueta="Editar datos" onGuardado={setEquipo} />
+            <ConfirmarEliminar
+              etiqueta="Eliminar esta máquina"
+              titulo="Eliminar máquina"
+              nombre={equipo.nombre}
+              cargarResumen={() => api.resumenEliminacion('equipamiento', equipo.id)}
+              onConfirmar={() => api.eliminarEquipo(equipo.id)}
+              onEliminado={() => navigate('/equipos')}
+            />
           </div>
 
           <dl className="text-sm space-y-1">
@@ -344,7 +361,7 @@ export default function EquipoDetalle() {
                 <a
                   href={api.urlCodigoQr(equipo.id)}
                   download={`qr-${equipo.codigo_activo}.png`}
-                  className="inline-block text-xs font-medium text-emerald-700 underline"
+                  className="inline-block text-xs font-medium text-brand-700 underline"
                 >
                   Descargar QR para imprimir
                 </a>
@@ -491,12 +508,13 @@ export default function EquipoDetalle() {
                   <th className="px-5 py-2">Qué se hizo</th>
                   <th className="px-5 py-2">Costo</th>
                   <th className="px-5 py-2">Incidencia relacionada</th>
+                  <th className="px-5 py-2"></th>
                 </tr>
               </thead>
               <tbody>
                 {mantenimientos.length === 0 && (
                   <tr>
-                    <td className="px-5 py-4 text-slate-400" colSpan={6}>
+                    <td className="px-5 py-4 text-slate-400" colSpan={7}>
                       Todavía no hay mantenimientos registrados para este equipo.
                     </td>
                   </tr>
@@ -520,6 +538,15 @@ export default function EquipoDetalle() {
                         ) : (
                           <span className="text-xs text-slate-400">General</span>
                         )}
+                      </td>
+                      <td className="px-5 py-2">
+                        <ConfirmarEliminar
+                          titulo="Eliminar mantenimiento"
+                          nombre={`${mantenimiento.tipo} · ${mantenimiento.descripcion}`.slice(0, 80)}
+                          onConfirmar={() => api.eliminarMantenimiento(mantenimiento.id)}
+                          onEliminado={cargar}
+                          aviso="Solo se borra este registro del historial; el estado de la máquina no cambia."
+                        />
                       </td>
                     </tr>
                   )

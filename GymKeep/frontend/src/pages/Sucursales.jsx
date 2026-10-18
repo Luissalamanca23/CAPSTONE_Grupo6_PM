@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api/client.js'
+import ConfirmarEliminar from '../components/ConfirmarEliminar.jsx'
 
 const EMPRESA_INICIAL = { razon_social: '' }
 const SUCURSAL_INICIAL = { codigo: '', nombre: '', ciudad: '' }
@@ -103,7 +104,7 @@ export default function Sucursales() {
               onChange={(e) => setFormEmpresa({ razon_social: e.target.value })}
               className="flex-1 border border-slate-300 rounded-md px-3 py-1.5 text-sm"
             />
-            <button className="bg-emerald-600 text-white rounded-md px-4 py-1.5 text-sm font-medium hover:bg-emerald-700">
+            <button className="bg-brand-600 text-white rounded-md px-4 py-1.5 text-sm font-medium hover:bg-brand-700">
               Crear
             </button>
           </form>
@@ -144,7 +145,7 @@ export default function Sucursales() {
                   className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
                 />
               </label>
-              <button className="bg-emerald-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-emerald-700">
+              <button className="bg-brand-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-brand-700">
                 + Agregar sucursal
               </button>
             </form>
@@ -161,7 +162,17 @@ export default function Sucursales() {
                     <p className="font-semibold text-slate-900">{sucursal.nombre}</p>
                     <p className="text-xs text-slate-400 font-mono">{sucursal.codigo}</p>
                   </div>
-                  <span className="text-xs text-slate-400">{sucursal.ciudad}</span>
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs text-slate-400">{sucursal.ciudad}</span>
+                    <ConfirmarEliminar
+                      etiqueta="Eliminar sucursal"
+                      titulo="Eliminar sucursal"
+                      nombre={sucursal.nombre}
+                      cargarResumen={() => api.resumenEliminacion('sucursales', sucursal.id)}
+                      onConfirmar={() => api.eliminarSucursal(sucursal.id)}
+                      onEliminado={cargarTodo}
+                    />
+                  </div>
                 </div>
                 <div className="px-5 py-3 space-y-3">
                   <p className="text-xs font-medium text-slate-500">Zonas</p>
@@ -169,9 +180,19 @@ export default function Sucursales() {
                     {(zonasPorSucursal[sucursal.id] || []).map((zona) => (
                       <span
                         key={zona.id}
-                        className="inline-block px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600"
+                        className="inline-flex items-center gap-2 pl-2.5 pr-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600"
                       >
                         {zona.nombre}
+                        <ConfirmarEliminar
+                          etiqueta="×"
+                          titulo="Eliminar zona"
+                          nombre={zona.nombre}
+                          aviso="Las máquinas y cámaras de esta zona no se borran; quedan sin zona asignada."
+                          cargarResumen={() => api.resumenEliminacion('zonas', zona.id)}
+                          onConfirmar={() => api.eliminarZona(zona.id)}
+                          onEliminado={cargarTodo}
+                          className="text-slate-400 hover:text-red-600 text-sm leading-none"
+                        />
                       </span>
                     ))}
                     {(zonasPorSucursal[sucursal.id] || []).length === 0 && (
@@ -195,7 +216,7 @@ export default function Sucursales() {
                       }
                       className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-xs"
                     />
-                    <button className="text-xs font-medium text-emerald-700 border border-emerald-200 rounded-md px-3 py-1.5 hover:bg-emerald-50">
+                    <button className="text-xs font-medium text-brand-700 border border-brand-200 rounded-md px-3 py-1.5 hover:bg-brand-50">
                       + Zona
                     </button>
                   </form>

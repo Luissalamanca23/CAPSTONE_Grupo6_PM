@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client.js'
 import { visionApi } from '../api/vision.js'
-import { CATEGORIAS_EQUIPO } from '../components/CategoriaEquipoBadge.jsx'
+import { ETIQUETA_CATEGORIA_EQUIPO } from '../components/CategoriaEquipoBadge.jsx'
 import EstadoBadge from '../components/EstadoBadge.jsx'
 import EstadoVivoChip from '../components/EstadoVivoChip.jsx'
 import {
@@ -23,10 +23,12 @@ import {
   BLOQUES_HORA,
   DIAS_SEMANA,
   PERIODOS,
+  UMBRAL_DEMANDA_ALTA,
   UMBRAL_HORAS_PREVENTIVO,
   UMBRAL_HORAS_SIN_ATENCION,
   UMBRAL_REINCIDENCIA,
   calcularAnalitica,
+  calcularDemanda,
   formatearDuracionHoras,
   porcentajeCambio,
 } from '../utils/analitica.js'
@@ -35,7 +37,7 @@ import { formatearFechaHora, formatearMonto } from '../utils/formato.js'
 import { usePaginacion } from '../utils/paginacion.js'
 
 const ORDEN_PRIORIDAD = { urgente: 4, alta: 3, media: 2, baja: 1 }
-const ETIQUETA_CATEGORIA = Object.fromEntries(CATEGORIAS_EQUIPO.map((c) => [c.valor, c.etiqueta]))
+const ETIQUETA_CATEGORIA = ETIQUETA_CATEGORIA_EQUIPO
 
 // Cada cuanto se vuelve a pedir el estado en vivo de las camaras (si hay pipeline de vision).
 const REFRESCO_USO_MS = 5000
@@ -57,6 +59,8 @@ async function traerTodo(pedir) {
 
 const formatoNumero = (valor) => Number(valor).toLocaleString('es-CL')
 const formatoHoras = (valor) => `${Number(valor).toLocaleString('es-CL', { maximumFractionDigits: 1 })} h`
+const formatoHorasDia = (valor) => `${Number(valor).toLocaleString('es-CL', { maximumFractionDigits: 1 })} h/día`
+const NIVEL_DEMANDA = { alta: 'alta', normal: 'normal', baja: 'baja' }
 
 /** Monto abreviado para el eje de un grafico: $50 mil, $1,2 M. */
 function formatoMontoEje(valor) {
@@ -207,6 +211,12 @@ export default function Dashboard() {
     [incidencias, mantenimientos, equipos, usoPorEquipo, periodo]
   )
 
+  // Demanda de las maquinas (acumulado desde la instalacion; no depende del periodo elegido).
+  const demanda = useMemo(
+    () => calcularDemanda({ equipos, uso: Array.from(usoPorEquipo.values()), etiquetasCategoria: ETIQUETA_CATEGORIA }),
+    [equipos, usoPorEquipo]
+  )
+
   // Los hooks de paginacion van antes de los return anticipados de mas abajo.
   const paginacionEquipos = usePaginacion(equiposFiltrados, 12, filtroZona)
   const paginacionIncidencias = usePaginacion(urgentes, 8)
@@ -269,6 +279,21 @@ export default function Dashboard() {
   }))
   const hayAlertas = alertaUrgentes.length + alertaRecurrentes.length + alertaPreventivo.length > 0
 
+  // Demanda: las 10 mas usadas y el uso medio por tipo de maquina.
+  const demandaMaquinas = (demanda?.maquinas ?? []).slice(0, 10).map((m) => ({
+    id: m.id,
+    etiqueta: m.etiqueta,
+    valor: m.horasPorDia,
+    detalle: `${Math.round(m.ocupacion * 100)}% de ocupación · demanda ${NIVEL_DEMANDA[m.nivel]}`,
+  }))
+  const demandaCategorias = (demanda?.categorias ?? []).map((c) => ({
+    id: c.id,
+    etiqueta: c.etiqueta,
+    valor: c.horasPorDiaPorMaquina,
+    detalle: `${c.maquinas} máquinas (${c.porcentajeFlota}% de la flota) · ${c.porcentajeUso}% de las horas de uso`,
+  }))
+  const categoriasAltas = (demanda?.categorias ?? []).filter((c) => c.nivel === 'alta')
+
   return (
     <div className="space-y-6">
       {/* 1. Encabezado principal */}
@@ -283,7 +308,7 @@ export default function Dashboard() {
           </Link>
           <Link
             to="/incidencias"
-            className="text-sm font-medium bg-emerald-600 text-white rounded-md px-3 py-1.5 hover:bg-emerald-700"
+            className="text-sm font-medium bg-brand-600 text-white rounded-md px-3 py-1.5 hover:bg-brand-700"
           >
             Ver todas las incidencias
           </Link>
@@ -572,6 +597,97 @@ export default function Dashboard() {
         </div>
       </section>
 
+      {/* 4b. Demanda: que maquinas se ocupan mas y cuales conviene sumar */}
+      {demanda && (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-800">Demanda de máquinas: qué conviene ampliar</h2>
+            <p className="text-xs text-slate-500">
+              Uso acumulado de cada máquina desde que se instaló (según las cámaras); no depende del periodo elegido
+              arriba. Sirve para decidir qué sumar si el gimnasio crece o se abre otro local.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <TarjetaGrafico
+              titulo="Máquinas más demandadas"
+              subtitulo={`Horas de uso por día · promedio del gimnasio: ${formatoHorasDia(demanda.promedioHorasDia)}`}
+              tabla={{
+                columnas: ['Máquina', 'Horas por día', 'Ocupación', 'Demanda'],
+                filas: demanda.maquinas
+                  .slice(0, 10)
+                  .map((m) => [m.etiqueta, formatoHorasDia(m.horasPorDia), `${Math.round(m.ocupacion * 100)}%`, NIVEL_DEMANDA[m.nivel]]),
+              }}
+            >
+              <BarrasHorizontales items={demandaMaquinas} formatoValor={formatoHorasDia} nombreValor="de uso al día" />
+            </TarjetaGrafico>
+
+            <TarjetaGrafico
+              titulo="Demanda por tipo de máquina"
+              subtitulo="Horas por día de una máquina promedio de cada tipo"
+              tabla={{
+                columnas: ['Tipo', 'Máquinas', 'Horas por día (por máquina)', '% de las horas de uso'],
+                filas: demanda.categorias.map((c) => [c.etiqueta, c.maquinas, formatoHorasDia(c.horasPorDiaPorMaquina), `${c.porcentajeUso}%`]),
+              }}
+            >
+              <BarrasHorizontales items={demandaCategorias} formatoValor={formatoHorasDia} nombreValor="por máquina" />
+            </TarjetaGrafico>
+
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+              <h3 className="text-sm font-semibold text-slate-800">Para ampliar o abrir otro local</h3>
+              <div className="mt-3 grid grid-cols-1 gap-6 md:grid-cols-2">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-emerald-700">Conviene sumar más unidades</p>
+                  {demanda.sugeridas.length > 0 ? (
+                    <ul className="mt-2 space-y-1.5 text-sm">
+                      {demanda.sugeridas.map((m) => (
+                        <li key={m.id} className="flex flex-wrap items-baseline justify-between gap-x-3">
+                          <Link to={`/equipos/${m.id}`} className="font-medium text-slate-900 hover:underline">
+                            {m.etiqueta}
+                          </Link>
+                          <span className="text-xs text-slate-600">
+                            {formatoHorasDia(m.horasPorDia)} · {m.indice.toLocaleString('es-CL', { maximumFractionDigits: 1 })}× el promedio
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-500">Ninguna máquina destaca todavía por sobre el promedio.</p>
+                  )}
+                  {categoriasAltas.length > 0 && (
+                    <p className="mt-3 text-xs text-slate-600">
+                      Por tipo, la mayor demanda por máquina está en: {categoriasAltas.map((c) => c.etiqueta).join(', ')}.
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Poca demanda: no es prioridad</p>
+                  {demanda.pocaDemanda.length > 0 ? (
+                    <ul className="mt-2 space-y-1.5 text-sm">
+                      {demanda.pocaDemanda.map((m) => (
+                        <li key={m.id} className="flex flex-wrap items-baseline justify-between gap-x-3">
+                          <Link to={`/equipos/${m.id}`} className="font-medium text-slate-900 hover:underline">
+                            {m.etiqueta}
+                          </Link>
+                          <span className="text-xs text-slate-600">{formatoHorasDia(m.horasPorDia)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-500">Todas las máquinas tienen un uso razonable.</p>
+                  )}
+                </div>
+              </div>
+              <p className="mt-4 text-xs text-slate-500">
+                Una máquina tiene demanda alta cuando se usa {UMBRAL_DEMANDA_ALTA.toLocaleString('es-CL')} veces o más el promedio del
+                gimnasio; baja, menos de la mitad. La ocupación es la parte de las horas de apertura (16 h) en que
+                estuvo ocupada. Si además hay filas de espera en horas punta, es la señal para sumar otra unidad.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* 5. MONITOR EN TIEMPO REAL DEL ESTADO DE MÁQUINAS */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -630,7 +746,7 @@ export default function Dashboard() {
                     <EstadoBadge estado={equipo.estado} />
                   </div>
 
-                  <h3 className="font-semibold text-slate-800 text-sm group-hover:text-emerald-700 transition-colors line-clamp-1">
+                  <h3 className="font-semibold text-slate-800 text-sm group-hover:text-brand-700 transition-colors line-clamp-1">
                     {equipo.nombre}
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">{detalleEquipo}</p>
@@ -695,7 +811,7 @@ export default function Dashboard() {
                     {incidencia.equipo ? (
                       <Link
                         to={`/equipos/${incidencia.equipo.id}`}
-                        className="font-medium text-slate-900 hover:text-emerald-700 inline-flex items-center gap-1.5"
+                        className="font-medium text-slate-900 hover:text-brand-700 inline-flex items-center gap-1.5"
                       >
                         <span
                           className={`w-1.5 h-1.5 rounded-full shrink-0 ${getSaludEquipo(incidencia.equipo).punto}`}
