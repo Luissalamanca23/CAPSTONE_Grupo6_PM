@@ -72,9 +72,20 @@ if (-not $SinDatosDemo) {
         Write-Host '    Los datos de demostracion ya estaban cargados.'
     } else {
         Paso 'Cargando datos de demostracion (unos segundos)'
-        foreach ($f in 'reset_demo_incidencias.sql', 'agregar_mas_datos.sql', 'datos_demo_dashboard.sql', 'historial_demo.sql') {
+        # El orden importa: historial_demo.sql borra lo que genera datos_demo_dashboard.sql, por eso
+        # va antes; ajustar-datos-demo.sql reparte las fechas de los reportes antes del dashboard.
+        $scripts = @(
+            @{ Archivo = 'reset_demo_incidencias.sql'; Carpeta = $Postgres },
+            @{ Archivo = 'agregar_mas_datos.sql'; Carpeta = $Postgres },
+            @{ Archivo = 'reclasificar_categorias.sql'; Carpeta = $Postgres },
+            @{ Archivo = 'historial_demo.sql'; Carpeta = $Postgres },
+            @{ Archivo = 'ajustar-datos-demo.sql'; Carpeta = $PSScriptRoot },
+            @{ Archivo = 'datos_demo_dashboard.sql'; Carpeta = $Postgres }
+        )
+        foreach ($sc in $scripts) {
+            $f = $sc.Archivo
             Write-Host "    $f"
-            DC cp (Join-Path $Postgres $f) "db:/tmp/$f"
+            DC cp (Join-Path $sc.Carpeta $f) "db:/tmp/$f"
             DC exec -T db psql -q -U $PgUser -d $PgDb -v ON_ERROR_STOP=1 -f "/tmp/$f" | Out-Null
             if ($LASTEXITCODE -ne 0) { Fallo "Fallo al cargar $f" }
         }

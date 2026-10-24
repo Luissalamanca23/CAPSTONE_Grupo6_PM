@@ -20,6 +20,11 @@ Tailscale puede mostrar un enlace para habilitar Funnel: abrirlo y aceptar.
   tarde-noche, mas gente lunes-martes, ~158.000 sesiones en 2 anos) junto con problemas recientes:
   una cinta fuera de servicio, una bicicleta en reparacion, cables y tapices gastados y algunas
   fallas ya resueltas. Ver `simular-uso-real.sql`.
+- **Datos de ejemplo**: se cargan una sola vez, en este orden (importa: `historial_demo.sql` borra lo
+  que genera `datos_demo_dashboard.sql`): reset_demo_incidencias, agregar_mas_datos,
+  reclasificar_categorias, historial_demo, `ajustar-datos-demo.sql` (reparte fechas y horas de
+  los reportes y cierra los antiguos, para que el Panel no muestre picos ni variaciones absurdas) y
+  datos_demo_dashboard.
 - `iniciar-demo.bat -SinDatosDemo` arranca sin los datos de ejemplo (solo `seed.sql`).
 - `iniciar-demo.bat -SinSimulacion` no regenera las sesiones ni los problemas.
 - `detener-demo.bat` quita la publicacion y apaga todo (`-BorrarDatos` borra tambien la base).
