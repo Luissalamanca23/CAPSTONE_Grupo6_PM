@@ -1,0 +1,54 @@
+# Demo publica CON camaras: lo mismo que docker-compose.yml (base de datos, API y web en el puerto
+# 8088) mas el pipeline de vision, que analiza un video de vision/datos/ como si fuera una camara
+# en vivo y lo deja en el panel (/camaras). Lo levanta iniciar-demo.ps1 con -Camaras.
+# A mano: VISION_FUENTE=/app/datos/mi_video.mp4 docker compose -f demo-publica/docker-compose.vision.yml up -d --build
+# No aplica zonas iniciales (VISION_ZONAS vacio): las zonas se dibujan en el panel.
+name: gymkeep-demo
+
+include:
+  - docker-compose.yml
+
+services:
+  vision:
+    build: ../vision
+    image: gymkeep-vision
+    container_name: gymkeep_vision
+    restart: unless-stopped
+    # Ctrl+C (SIGINT): el pipeline cierra las sesiones abiertas antes de salir.
+    stop_signal: SIGINT
+    # `api` arranca primero; ademas el contenedor espera a que responda (--esperar-api) y, si
+    # algo falla, Docker lo reinicia (restart).
+    depends_on:
+      - api
+    environment:
+      TZ: America/Santiago
+      YOLO_CONFIG_DIR: /tmp/Ultralytics
+      VISION_API: ${VISION_API:-http://api:8000}
+      VISION_CAMARA: ${VISION_CAMARA:-CAM-01}
+      VISION_FUENTE: ${VISION_FUENTE:-/app/datos/cctv_cintas.mp4}
+      VISION_OPCIONES: ${VISION_OPCIONES:---tiempo-real --repetir}
+      VISION_ZONAS: ${VISION_ZONAS-}
+      VISION_CUADRO_CADA_S: ${VISION_CUADRO_CADA_S:-1}
+      VISION_PIPELINE_KEY: ${VISION_PIPELINE_KEY:-}
+      VISION_PIN: ${VISION_PIN:-}
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        case "$$VISION_FUENTE" in rtsp://*|rtsps://*|http://*|https://*) ;;
+        *) if [ ! -f "$$VISION_FUENTE" ]; then
+        echo "No existe el video $$VISION_FUENTE dentro del contenedor. Los videos van en vision/datos/ (no se suben a git) y se ven como /app/datos/<archivo>.";
+        sleep 30; exit 1; fi ;; esac;
+        if [ -n "$$VISION_ZONAS" ]; then
+        python -m gymkeep_vision zonas "$$VISION_ZONAS" --api "$$VISION_API" --camara "$$VISION_CAMARA"
+        --esperar-api 180 --marca "/app/salida/zonas_$$VISION_CAMARA.aplicadas" || echo "No se pudieron aplicar las zonas iniciales (se pueden dibujar en el panel)";
+        fi;
+        exec python -m gymkeep_vision procesar "$$VISION_FUENTE" --api "$$VISION_API"
+        --camara "$$VISION_CAMARA" --esperar-api 180 --cuadro-cada "$$VISION_CUADRO_CADA_S"
+        --sin-video --inicio "$$(date -Iseconds)" -o /app/salida/vivo $$VISION_OPCIONES
+    volumes:
+      - ../vision/datos:/app/datos:ro
+      - ../vision/config:/app/config:ro
+      - vision_salida:/app/salida
+
+volumes:
+  vision_salida:
