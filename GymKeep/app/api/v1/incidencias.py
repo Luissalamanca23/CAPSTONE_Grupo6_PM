@@ -11,7 +11,8 @@ from app.core.database import get_db
 from app.crud import equipamiento as crud_equipamiento
 from app.crud import incidencia as crud_incidencia
 from app.crud import tipo_falla as crud_tipo_falla
-from app.services import eliminacion
+from app.services import eliminacion, fotos_incidencias
+from app.services.vision_service import ImagenInvalida
 from app.models.gymkeep import EstadoIncidencia, PrioridadIncidencia
 from app.schemas.incidencia import (
     IncidenciaCreate,
@@ -107,7 +108,16 @@ def crear_incidencia_por_qr(request: Request, incidencia_in: IncidenciaCreateByQ
             status_code=400, detail="Ese tipo de falla no esta disponible en el formulario publico."
         )
 
-    return crud_incidencia.create_incidencia_por_qr(
+    # La foto es opcional; si viene se valida ANTES de crear el reporte, para avisar al
+    # usuario en vez de perderla en silencio.
+    foto = None
+    if incidencia_in.foto:
+        try:
+            foto = fotos_incidencias.preparar(incidencia_in.foto)
+        except ImagenInvalida as exc:
+            raise HTTPException(status_code=400, detail=f"La foto adjunta no es valida: {exc}") from exc
+
+    incidencia = crud_incidencia.create_incidencia_por_qr(
         db,
         equipo,
         tipo_falla,
@@ -116,6 +126,8 @@ def crear_incidencia_por_qr(request: Request, incidencia_in: IncidenciaCreateByQ
         funcional=incidencia_in.funcional,
         descripcion=incidencia_in.descripcion,
     )
+    incidencia.tiene_foto = bool(foto) and fotos_incidencias.guardar(incidencia.id, *foto)
+    return incidencia
 
 
 @router.get("/", response_model=list[IncidenciaOut])
@@ -149,7 +161,9 @@ def listar_incidencias(
         q=q,
     )
     response.headers["X-Total-Count"] = str(crud_incidencia.count_incidencias(db, **filtros))
-    return crud_incidencia.list_incidencias(db, skip=skip, limit=limit, **filtros)
+    incidencias = crud_incidencia.list_incidencias(db, skip=skip, limit=limit, **filtros)
+    fotos_incidencias.anotar(incidencias)
+    return incidencias
 
 
 @router.get("/{incidencia_id}", response_model=IncidenciaOut)
@@ -157,7 +171,20 @@ def obtener_incidencia(incidencia_id: int, db: Session = Depends(get_db)):
     incidencia = crud_incidencia.get_incidencia(db, incidencia_id)
     if not incidencia:
         raise HTTPException(status_code=404, detail="Incidencia no encontrada.")
+    fotos_incidencias.anotar([incidencia])
     return incidencia
+
+
+@router.get("/{incidencia_id}/foto")
+def foto_incidencia(incidencia_id: int):
+    """Foto del dano adjuntada al reporte (JPEG). 404 si el reporte no tiene foto."""
+    try:
+        jpeg = fotos_incidencias.leer(incidencia_id)
+    except Exception as exc:  # noqa: BLE001 - Mongo caido
+        raise HTTPException(status_code=503, detail="No se pudo leer la foto en este momento.") from exc
+    if jpeg is None:
+        raise HTTPException(status_code=404, detail="Este reporte no tiene foto.")
+    return Response(content=jpeg, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=300"})
 
 
 @router.patch("/{incidencia_id}", response_model=IncidenciaOut)
@@ -166,7 +193,9 @@ def actualizar_incidencia(incidencia_id: int, incidencia_in: IncidenciaUpdate, d
     incidencia = crud_incidencia.get_incidencia(db, incidencia_id)
     if not incidencia:
         raise HTTPException(status_code=404, detail="Incidencia no encontrada.")
-    return crud_incidencia.update_incidencia(db, incidencia, incidencia_in)
+    incidencia = crud_incidencia.update_incidencia(db, incidencia, incidencia_in)
+    fotos_incidencias.anotar([incidencia])
+    return incidencia
 
 
 @router.get("/{incidencia_id}/resumen-eliminacion")

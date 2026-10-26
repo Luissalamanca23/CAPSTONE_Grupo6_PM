@@ -34,3 +34,11 @@ minio_data/
 # Logs
 *.log
 npm-debug.log*
+
+# Respaldos de datos reales y marca de la demo con datos reales (no subir)
+GymKeep/respaldos/
+GymKeep/demo-publica/.datos-reales
+
+# Registro del ultimo arranque de la demo
+GymKeep/demo-publica/ultimo-arranque.log
+GymKeep/demo-publica/_to_delete/
