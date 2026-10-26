@@ -19,6 +19,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.mongo import get_mongo_db
+from app.services import fotos_incidencias
 from app.models.gymkeep import (
     Camara,
     Equipo,
@@ -111,8 +112,10 @@ def resumen_equipo(db: Session, equipo_id: int) -> dict:
 
 
 def eliminar_equipo(db: Session, equipo_id: int) -> bool:
+    incidencia_ids = _ids(db, Incidencia.id, Incidencia.equipo_id == equipo_id)
     _borrar_equipos(db, [equipo_id])
     db.commit()
+    fotos_incidencias.borrar(incidencia_ids)
     return _limpiar_mongo([equipo_id], [])
 
 
@@ -174,12 +177,14 @@ def resumen_sucursal(db: Session, sucursal_id: int) -> dict:
 def eliminar_sucursal(db: Session, sucursal_id: int) -> bool:
     equipo_ids = _ids(db, Equipo.id, Equipo.sucursal_id == sucursal_id)
     camara_ids = _ids(db, Camara.id, Camara.sucursal_id == sucursal_id)
+    incidencia_ids = _ids(db, Incidencia.id, Incidencia.equipo_id.in_(equipo_ids)) if equipo_ids else []
     _borrar_equipos(db, equipo_ids)
     _borrar_camaras(db, camara_ids)
     db.execute(update(RegistroAuditoria).where(RegistroAuditoria.sucursal_id == sucursal_id).values(sucursal_id=None))
     db.execute(delete(Zona).where(Zona.sucursal_id == sucursal_id))
     db.execute(delete(Sucursal).where(Sucursal.id == sucursal_id))
     db.commit()
+    fotos_incidencias.borrar(incidencia_ids)
     return _limpiar_mongo(equipo_ids, camara_ids)
 
 
@@ -195,6 +200,7 @@ def eliminar_incidencia(db: Session, incidencia_id: int) -> None:
     db.execute(update(Mantenimiento).where(Mantenimiento.incidencia_id == incidencia_id).values(incidencia_id=None))
     db.execute(delete(Incidencia).where(Incidencia.id == incidencia_id))
     db.commit()
+    fotos_incidencias.borrar([incidencia_id])
 
 
 def eliminar_mantenimiento(db: Session, mantenimiento_id: int) -> None:
