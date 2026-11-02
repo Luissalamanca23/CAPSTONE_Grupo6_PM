@@ -273,7 +273,8 @@ de la imagen (no se monta `./app`) y arranca sin `--reload`; Postgres y Mongo so
 en `127.0.0.1`; y las claves son obligatorias (sin valores por defecto). Si falta alguna,
 `docker compose` se detiene con un mensaje. Hay que definir en el `.env`:
 `POSTGRES_PASSWORD`, `MONGO_ROOT_PASSWORD`, `FRONTEND_URL`, `VISION_PIN` y
-`VISION_PIPELINE_KEY`. La imagen de la API corre con un usuario sin privilegios y declara un
+`VISION_PIPELINE_KEY` (y, opcional, `AUTH_SECRET`). Después de levantarlo, crea la primera cuenta
+administradora con `crear-admin.bat` (ver "Inicio de sesión y seguridad"). La imagen de la API corre con un usuario sin privilegios y declara un
 `HEALTHCHECK` contra `/health`.
 
 ### Notas según tu terminal (Windows)
@@ -289,6 +290,37 @@ en `127.0.0.1`; y las claves son obligatorias (sin valores por defecto). Si falt
   ```
 - Si `docker compose up` falla para un contenedor que no sea `db`, `mongo` o `api`, revisa
   que no estés intentando levantar el perfil `storage` (MinIO) sin quererlo.
+
+## Inicio de sesión y seguridad
+
+Todo el panel y toda la API exigen sesión, **salvo** el formulario público de reporte por QR
+(`/reportar/<token>`) y lo que necesita (datos de la máquina del QR, catálogo de fallas del
+reporte y el envío del reporte). Se entra con **RUN chileno** (con dígito verificador) y una
+**clave numérica de 4 a 8 dígitos**.
+
+- **Cuentas:** no hay registro público. Las crea un administrador desde el panel (menú
+  *Usuarios*). La primera cuenta se crea por consola con `crear-admin.bat` (o
+  `docker exec -it gymkeep_api python -m app.crear_usuario --run 12.345.678-5 --nombre "Ana Pérez" --rol admin`).
+  Si el RUN ya existe, ese mismo comando le restablece la clave.
+- **Roles:** *Administrador* (todo, incluido eliminar datos y administrar cuentas) y *Técnico*
+  (usa el panel, pero no puede eliminar datos ni ver *Usuarios*).
+- **Sesión:** 24 horas (`SESSION_HOURS`), en una cookie `HttpOnly` y `SameSite=Lax` (`Secure`
+  cuando se entra por HTTPS). Cambiar la clave o desactivar una cuenta cierra sus sesiones.
+- **Claves:** se guardan solo como hash `scrypt` con sal. Como una clave de 4 dígitos es débil
+  por sí sola, se protege con bloqueo: 5 intentos fallidos bloquean la cuenta 15 minutos, y hay
+  un tope de intentos por IP. Un RUN inexistente responde igual que una clave incorrecta.
+- **Otros sitios web:** las peticiones que modifican datos revisan el `Origin`, y CORS solo
+  acepta localhost, redes privadas, Tailscale, `FRONTEND_URL` y `CORS_ORIGINS`.
+- **Pipeline de visión:** entra con la cabecera `X-Pipeline-Key` (`VISION_PIPELINE_KEY`, por defecto
+  `gymkeep-pipeline-local` en el compose). Esa clave puede leer y enviar datos de visión pero no
+  eliminar ni administrar cuentas: **cámbiala si la API es accesible desde fuera** (la demo pública
+  genera una al azar). El `VISION_PIN` queda como capa extra opcional.
+- **Secreto de las sesiones:** `AUTH_SECRET`; si está vacío se genera solo y se guarda en la base
+  (tabla `auth_config`). Las tablas `usuarios` y `auth_config` están en `postgres/schema.sql` y la
+  API las crea al arrancar si falta (bases anteriores al login).
+
+En los tests, el fixture `client` ya trae la sesión de un administrador y `client_anonimo` no
+tiene sesión; los controles de acceso están en `tests/test_auth.py`.
 
 ## Módulo de visión en el panel
 

@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.api.v1 import (
+    auth,
     camaras,
     empresas,
     equipamiento,
@@ -14,8 +15,11 @@ from app.api.v1 import (
     vision,
     zonas,
 )
+from app.core.seguridad import requerir_sesion
 
-api_router = APIRouter()
+# Toda la API exige sesion salvo las rutas publicas de core/seguridad.py (formulario del QR y login).
+api_router = APIRouter(dependencies=[Depends(requerir_sesion)])
+api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 api_router.include_router(empresas.router, prefix="/empresas", tags=["Empresas"])
 api_router.include_router(sucursales.router, prefix="/sucursales", tags=["Sucursales"])
 api_router.include_router(zonas.router, prefix="/zonas", tags=["Zonas"])

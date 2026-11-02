@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import BigInteger, create_engine
@@ -5,11 +7,20 @@ from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.core.database import Base, get_db
-from app.main import app
+# La API no debe tocar la base real al arrancar (crear tablas) durante los tests.
+os.environ["SKIP_DB_INIT"] = "1"
+
+from app.core import auth  # noqa: E402
+from app.core.database import Base, get_db  # noqa: E402
+from app.crud import usuario as crud_usuario  # noqa: E402
+from app.main import app  # noqa: E402
 from app.models.gymkeep import Empresa, PrioridadIncidencia, Sucursal, TipoFalla, Zona
 
 SQLALCHEMY_TEST_URL = "sqlite:///:memory:"
+
+# Cuentas de prueba (RUN con digito verificador valido).
+RUN_ADMIN, CLAVE_ADMIN = "12345678-5", "1234"
+RUN_TECNICO, CLAVE_TECNICO = "22222222-2", "4321"
 
 
 # Los modelos usan BigInteger como clave primaria (BIGSERIAL en Postgres), pero SQLite solo
@@ -146,8 +157,21 @@ def db_session():
         Base.metadata.drop_all(bind=engine)
 
 
+@pytest.fixture(autouse=True)
+def reiniciar_estado_de_login():
+    """El secreto de sesion y los contadores de intentos viven en memoria del proceso."""
+    from app.api.v1 import auth as auth_api
+
+    auth.reiniciar_cache_secreto()
+    auth_api.limitador_login_ip.reiniciar()
+    yield
+    auth.reiniciar_cache_secreto()
+
+
 @pytest.fixture()
-def client(db_session):
+def client_anonimo(db_session):
+    """Cliente sin sesion iniciada (como alguien que abre el panel o la API sin entrar)."""
+
     def override_get_db():
         try:
             yield db_session
@@ -158,6 +182,36 @@ def client(db_session):
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def admin(db_session):
+    return crud_usuario.crear(db_session, RUN_ADMIN, "Admin de Prueba", "admin", CLAVE_ADMIN)
+
+
+@pytest.fixture()
+def tecnico(db_session):
+    return crud_usuario.crear(db_session, RUN_TECNICO, "Tecnico de Prueba", "tecnico", CLAVE_TECNICO)
+
+
+def iniciar_sesion(cliente, run, clave):
+    respuesta = cliente.post("/api/v1/auth/login", json={"run": run, "clave": clave})
+    assert respuesta.status_code == 200, respuesta.text
+    return respuesta
+
+
+@pytest.fixture()
+def client(client_anonimo, admin):
+    """Cliente con la sesion de un administrador: asi los tests de cada modulo ejercen la API
+    como lo hace el panel. Los controles de acceso se prueban en tests/test_auth.py."""
+    iniciar_sesion(client_anonimo, RUN_ADMIN, CLAVE_ADMIN)
+    return client_anonimo
+
+
+@pytest.fixture()
+def client_tecnico(client_anonimo, tecnico):
+    iniciar_sesion(client_anonimo, RUN_TECNICO, CLAVE_TECNICO)
+    return client_anonimo
 
 
 @pytest.fixture()

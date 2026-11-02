@@ -1,4 +1,5 @@
 """Importa todos los modelos para que queden registrados en Base.metadata."""
+from app.models.auth import ConfigAuth, Usuario  # noqa: F401
 from app.models.gymkeep import (  # noqa: F401
     Camara,
     Empresa,

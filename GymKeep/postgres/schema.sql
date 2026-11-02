@@ -407,6 +407,31 @@ ON registros_auditoria(entidad, entidad_id);
 CREATE INDEX IF NOT EXISTS ix_auditoria_created_at
 ON registros_auditoria(created_at DESC);
 
+-- ---------- INICIO DE SESION DEL PANEL ----------
+-- RUN chileno canonico (12345678-5) + clave numerica guardada como hash scrypt (nunca en claro).
+-- Las cuentas las crea un administrador (panel > Usuarios) o `python -m app.crear_usuario`.
+-- La API tambien crea estas tablas al arrancar si faltan (bases creadas antes del login).
+CREATE TABLE IF NOT EXISTS usuarios (
+    id BIGSERIAL PRIMARY KEY,
+    run VARCHAR(12) NOT NULL UNIQUE,
+    nombre VARCHAR(120) NOT NULL,
+    rol VARCHAR(20) NOT NULL DEFAULT 'tecnico',
+    clave_hash VARCHAR(255) NOT NULL,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    intentos_fallidos INTEGER NOT NULL DEFAULT 0,
+    bloqueado_hasta TIMESTAMPTZ,
+    sesion_version INTEGER NOT NULL DEFAULT 0,
+    ultimo_acceso TIMESTAMPTZ,
+    creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT ck_usuarios_rol CHECK (rol IN ('admin', 'tecnico'))
+);
+
+-- Secreto con que se firman las sesiones (se genera solo la primera vez que alguien inicia sesion).
+CREATE TABLE IF NOT EXISTS auth_config (
+    clave VARCHAR(50) PRIMARY KEY,
+    valor TEXT NOT NULL
+);
+
 -- ---------- TRIGGERS UPDATED_AT ----------
 DROP TRIGGER IF EXISTS trg_empresas_updated_at ON empresas;
 CREATE TRIGGER trg_empresas_updated_at

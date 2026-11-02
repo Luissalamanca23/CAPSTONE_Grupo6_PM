@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useAuth } from '../auth/AuthContext.jsx'
 
 // Lo que devuelve /…/resumen-eliminacion, en palabras del panel. `borra: false` son cosas que
 // se CONSERVAN (solo pierden un vinculo): se muestran distinto y no exigen escribir ELIMINAR.
@@ -39,6 +40,7 @@ export default function ConfirmarEliminar({
   aviso,
   className = 'text-xs font-medium text-red-600 underline hover:text-red-700',
 }) {
+  const { esAdmin } = useAuth()
   const [abierto, setAbierto] = useState(false)
   const [resumen, setResumen] = useState(null)
   const [cargando, setCargando] = useState(false)
@@ -89,6 +91,9 @@ export default function ConfirmarEliminar({
       setBorrando(false)
     }
   }
+
+  // Eliminar datos es solo de administradores (la API tambien lo exige).
+  if (!esAdmin) return null
 
   return (
     <>

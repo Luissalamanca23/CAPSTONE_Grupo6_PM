@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import CambiarClaveDialogo from '../auth/CambiarClaveDialogo.jsx'
+import { useAuth } from '../auth/AuthContext.jsx'
 import FaqAyuda from '../components/FaqAyuda.jsx'
 
 const ICONOS = {
@@ -45,6 +47,26 @@ const ICONOS = {
       <path d="m15.5 10.5 6-3.5v10l-6-3.5" />
     </svg>
   ),
+  usuarios: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5 shrink-0">
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" />
+      <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8" />
+      <path d="M18 14.3c2 .7 3.5 2.5 3.5 5.7" />
+    </svg>
+  ),
+  llave: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5 shrink-0">
+      <circle cx="8" cy="15" r="4.5" />
+      <path d="m11.2 11.8 8.3-8.3M16.5 6.5l3 3M14 9l2.5 2.5" />
+    </svg>
+  ),
+  salir: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5 shrink-0">
+      <path d="M9 21H5.5A1.5 1.5 0 0 1 4 19.5v-15A1.5 1.5 0 0 1 5.5 3H9" />
+      <path d="M16 17l5-5-5-5M21 12H9" />
+    </svg>
+  ),
   sucursales: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5 shrink-0">
       <path d="M3 21h18" />
@@ -62,6 +84,7 @@ const ENLACES = [
   { to: '/uso', label: 'Uso de máquinas', icono: ICONOS.uso },
   { to: '/camaras', label: 'Cámaras', icono: ICONOS.camaras },
   { to: '/sucursales', label: 'Sucursales', icono: ICONOS.sucursales },
+  { to: '/usuarios', label: 'Usuarios', icono: ICONOS.usuarios, soloAdmin: true },
 ]
 
 const CLAVE_COLAPSO = 'gymkeep.menuColapsado'
@@ -112,8 +135,46 @@ function Marca({ className = 'text-xl' }) {
 const BOTON_CABECERA =
   'p-2 rounded-lg text-zinc-300 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white'
 
+/** Quien tiene la sesion abierta, con cambiar clave y cerrar sesion. */
+function PieUsuario({ compacto, onCambiarClave }) {
+  const { usuario, cerrarSesion } = useAuth()
+  if (!usuario) return null
+
+  if (compacto) {
+    return (
+      <div className="px-2 py-3 border-t border-white/10 flex flex-col items-center gap-1">
+        <button type="button" onClick={onCambiarClave} title="Cambiar mi clave" aria-label="Cambiar mi clave" className={BOTON_CABECERA}>
+          {ICONOS.llave}
+        </button>
+        <button type="button" onClick={cerrarSesion} title={`Cerrar sesión (${usuario.nombre})`} aria-label="Cerrar sesión" className={BOTON_CABECERA}>
+          {ICONOS.salir}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="px-5 py-3 border-t border-white/10 space-y-2">
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-white truncate">{usuario.nombre}</p>
+        <p className="text-xs text-zinc-500">{usuario.rol === 'admin' ? 'Administrador' : 'Técnico'}</p>
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        <button type="button" onClick={onCambiarClave} className="text-zinc-300 underline hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded">
+          Cambiar mi clave
+        </button>
+        <button type="button" onClick={cerrarSesion} className="text-zinc-300 underline hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded">
+          Cerrar sesión
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /** Contenido del menu: logo, enlaces y pie. `compacto` deja solo iconos (riel angosto). */
-function ContenidoMenu({ compacto = false, onNavegar, accionCabecera }) {
+function ContenidoMenu({ compacto = false, onNavegar, accionCabecera, onCambiarClave }) {
+  const { esAdmin } = useAuth()
+  const enlaces = ENLACES.filter((enlace) => !enlace.soloAdmin || esAdmin)
   return (
     <>
       <div className={`border-b border-white/10 ${compacto ? 'px-2 py-3' : 'px-4 pt-3 pb-4'}`}>
@@ -133,7 +194,7 @@ function ContenidoMenu({ compacto = false, onNavegar, accionCabecera }) {
       </div>
 
       <nav className={`flex-1 overflow-y-auto py-3 space-y-1 ${compacto ? 'px-2' : 'px-3'}`} aria-label="Secciones del panel">
-        {ENLACES.map((enlace) => (
+        {enlaces.map((enlace) => (
           <NavLink
             key={enlace.to}
             to={enlace.to}
@@ -149,8 +210,9 @@ function ContenidoMenu({ compacto = false, onNavegar, accionCabecera }) {
         ))}
       </nav>
 
+      <PieUsuario compacto={compacto} onCambiarClave={onCambiarClave} />
       {!compacto && (
-        <div className="px-5 py-3 border-t border-white/10 text-xs text-zinc-500">Fase 2 · Desarrollo del sistema</div>
+        <div className="px-5 py-2 border-t border-white/10 text-xs text-zinc-500">Fase 2 · Desarrollo del sistema</div>
       )}
     </>
   )
@@ -159,6 +221,7 @@ function ContenidoMenu({ compacto = false, onNavegar, accionCabecera }) {
 export default function AdminLayout() {
   const [menuAbierto, setMenuAbierto] = useState(false) // panel deslizante (movil)
   const [colapsado, setColapsado] = useState(leerColapsado) // riel de iconos (escritorio)
+  const [cambiandoClave, setCambiandoClave] = useState(false)
 
   function alternarColapso() {
     setColapsado((actual) => {
@@ -190,6 +253,7 @@ export default function AdminLayout() {
       >
         <ContenidoMenu
           compacto={colapsado}
+          onCambiarClave={() => setCambiandoClave(true)}
           accionCabecera={{
             onClick: alternarColapso,
             etiqueta: colapsado ? 'Expandir menú' : 'Contraer menú',
@@ -222,6 +286,10 @@ export default function AdminLayout() {
         >
           <ContenidoMenu
             onNavegar={() => setMenuAbierto(false)}
+            onCambiarClave={() => {
+              setMenuAbierto(false)
+              setCambiandoClave(true)
+            }}
             accionCabecera={{ onClick: () => setMenuAbierto(false), etiqueta: 'Cerrar menú', icono: ICONO_CERRAR }}
           />
         </aside>
@@ -236,6 +304,7 @@ export default function AdminLayout() {
       </main>
 
       <FaqAyuda />
+      {cambiandoClave && <CambiarClaveDialogo onCerrar={() => setCambiandoClave(false)} />}
     </div>
   )
 }

@@ -112,7 +112,15 @@ services:
       S3_REGION: ${S3_REGION:-us-east-1}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       VISION_PIN: ${VISION_PIN:-}
-      VISION_PIPELINE_KEY: ${VISION_PIPELINE_KEY:-}
+      # Toda la API exige sesion (login con RUN). El pipeline de vision entra con esta clave
+      # (cabecera X-Pipeline-Key); debe ser la misma en el servicio `vision`. El valor por
+      # defecto sirve para uso local: si la API queda expuesta, define VISION_PIPELINE_KEY.
+      VISION_PIPELINE_KEY: ${VISION_PIPELINE_KEY:-gymkeep-pipeline-local}
+      # Secreto para firmar las sesiones. Vacio = se genera solo y se guarda en la base.
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      SESSION_HOURS: ${SESSION_HOURS:-24}
+      # Origenes extra del panel (separados por comas); localhost y Tailscale ya estan permitidos.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
     ports:
       - "8000:8000"
     volumes:

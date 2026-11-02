@@ -41,10 +41,12 @@ terminar. No incluye el modulo de vision (camaras).
 3. `iniciar-demo-real.bat`: levanta todo con camaras, pregunta que video usar (o
    `iniciar-demo-real.bat -Video mi_video.mp4 -Camara CAM-01`) y publica. El video se analiza en
    bucle como si fuera una camara en vivo: **<direccion>/camaras**. Dibuja las zonas de las
-   maquinas en el panel (Camaras > tu camara > Dibujar zona); al ejecutar el script muestra un
-   **PIN** que el panel pide para editar zonas.
+   maquinas en el panel (Camaras > tu camara > Dibujar zona). Todo el panel pide inicio de sesion
+   (RUN + clave numerica): antes de entrar crea tu cuenta con `..\crear-admin.bat`. Solo el
+   formulario del QR de cada maquina queda abierto al publico.
 4. Para cambiar de video: copia el nuevo y vuelve a ejecutar `iniciar-demo-real.bat`.
 5. Volver a la demo de ejemplo: `detener-demo.bat -BorrarDatos` y luego `iniciar-demo.bat`.
    Volver a trabajar en local con los datos reales: `..\volver-a-datos-reales.bat`.
 
-Con datos reales publicados, cualquiera con el enlace puede verlos y editarlos: apagar al terminar.
+Con datos reales publicados, solo quien tenga una cuenta puede ver y editar el panel (el formulario
+del QR sigue abierto para reportar fallas), pero igual conviene apagar al terminar.

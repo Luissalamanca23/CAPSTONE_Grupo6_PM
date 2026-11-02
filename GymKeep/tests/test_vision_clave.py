@@ -85,8 +85,15 @@ def test_el_cuadro_acepta_la_clave_o_el_pin(client, mongo, camara_y_equipo, con_
 def test_el_cuadro_con_solo_clave_configurada_no_queda_abierto(client, mongo, camara_y_equipo, con_clave):
     camara_id, _ = camara_y_equipo
     url = f"/api/v1/vision/camaras/{camara_id}/cuadro"
+    client.cookies.clear()  # sin sesion iniciada
     assert client.put(url, content=imagen()).status_code == 401
     assert client.put(url, content=imagen(), headers=con_clave).status_code == 201
+
+
+def test_el_cuadro_con_clave_configurada_lo_puede_subir_el_panel_con_sesion(client, mongo, camara_y_equipo, con_clave):
+    camara_id, _ = camara_y_equipo
+    url = f"/api/v1/vision/camaras/{camara_id}/cuadro"
+    assert client.put(url, content=imagen()).status_code == 201  # la sesion del panel basta
 
 
 def test_el_cuadro_con_solo_pin_configurado(client, mongo, camara_y_equipo, con_pin):

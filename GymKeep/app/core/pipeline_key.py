@@ -38,11 +38,14 @@ def verificar_clave_o_pin(
     x_pipeline_key: Optional[str] = Header(default=None),
     x_vision_pin: Optional[str] = Header(default=None),
 ) -> None:
-    """Para el cuadro de la camara: lo sube el pipeline (clave) o el panel (PIN de edicion)."""
+    """Para el cuadro de la camara: lo sube el pipeline (clave) o el panel. Si hay PIN de
+    edicion, el panel debe enviarlo; si no, basta tener la sesion iniciada."""
     if clave_requerida() and _clave_valida(x_pipeline_key):
         return
     if pin_requerido():
         verificar_pin(request, x_vision_pin)
+        return
+    if getattr(request.state, "usuario", None) is not None:
         return
     if clave_requerida():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Se requiere la clave del pipeline o el PIN.")
