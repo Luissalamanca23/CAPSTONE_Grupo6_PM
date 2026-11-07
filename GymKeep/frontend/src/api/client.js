@@ -78,6 +78,7 @@ export const api = {
   eliminarIncidencia: (id) => request(`/incidencias/${id}`, { method: 'DELETE' }),
   eliminarMantenimiento: (id) => request(`/mantenimientos/${id}`, { method: 'DELETE' }),
   regenerarQr: (id) => request(`/equipamiento/${id}/regenerar-qr`, { method: 'POST' }),
+  urlFotoIncidencia: (id) => `${BASE_URL}/incidencias/${id}/foto`,
   urlCodigoQr: (id) => `${BASE_URL}/equipamiento/${id}/codigo-qr`,
 
   // Incidencias

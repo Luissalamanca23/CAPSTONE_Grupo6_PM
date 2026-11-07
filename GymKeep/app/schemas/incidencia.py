@@ -50,6 +50,12 @@ class IncidenciaCreateByQR(BaseModel):
         description="Si la maquina sigue pudiendo usarse. En False: prioridad urgente y el "
         "equipo pasa a estado 'fuera_de_servicio' automaticamente.",
     )
+    foto: Optional[str] = Field(
+        default=None,
+        max_length=8_000_000,
+        description="Foto OPCIONAL del dano o la falla, en base64 (o data URL). Se valida y se guarda "
+        "en Mongo (fotos_incidencias); si no viene, el reporte se crea igual.",
+    )
     reportado_por: str = Field(min_length=1, max_length=80, description="Nombre de quien reporta; unico campo de texto libre.")
     descripcion: Optional[str] = Field(
         default=None,
@@ -91,3 +97,4 @@ class IncidenciaOut(BaseModel):
     prioridad: PrioridadIncidencia
     fecha_reporte: datetime
     fecha_resolucion: Optional[datetime] = None
+    tiene_foto: bool = False

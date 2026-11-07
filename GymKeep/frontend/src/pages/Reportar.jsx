@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { api } from '../api/client.js'
+import { reducirFoto } from '../utils/imagen.js'
 
 const CATEGORIAS = [
   { clave: 'mecanica', etiqueta: 'Mecánica', ayuda: 'Piezas, ruidos, desgaste' },
@@ -26,6 +27,9 @@ export default function Reportar() {
   const [descripcionLibre, setDescripcionLibre] = useState('') // solo para categoria "otro"
   const [gravedad, setGravedad] = useState(null)
   const [funcional, setFuncional] = useState(null) // true | false | null (sin responder)
+  const [foto, setFoto] = useState(null) // { base64, vistaPrevia } | null (opcional)
+  const [errorFoto, setErrorFoto] = useState(null)
+  const [procesandoFoto, setProcesandoFoto] = useState(false)
   const [nombre, setNombre] = useState('')
 
   const [enviando, setEnviando] = useState(false)
@@ -75,6 +79,22 @@ export default function Reportar() {
 
   const listo = Boolean(categoria && pasoDosCompleto && gravedad && funcional !== null && nombre.trim())
 
+  async function elegirFoto(evento) {
+    const archivo = evento.target.files?.[0]
+    evento.target.value = '' // permite volver a elegir la misma foto
+    if (!archivo) return
+    setErrorFoto(null)
+    setProcesandoFoto(true)
+    try {
+      setFoto(await reducirFoto(archivo))
+    } catch (err) {
+      setFoto(null)
+      setErrorFoto(err.message)
+    } finally {
+      setProcesandoFoto(false)
+    }
+  }
+
   async function manejarEnvio(evento) {
     evento.preventDefault()
     if (!listo) return
@@ -88,6 +108,7 @@ export default function Reportar() {
         gravedad,
         funcional,
         reportado_por: nombre.trim(),
+        ...(foto ? { foto: foto.base64 } : {}),
         ...(esCategoriaOtro ? { descripcion: descripcionLibre.trim() } : {}),
       })
       setEnviado(resultado)
@@ -105,6 +126,8 @@ export default function Reportar() {
     setGravedad(null)
     setFuncional(null)
     setNombre('')
+    setFoto(null)
+    setErrorFoto(null)
     setEnviado(null)
     setErrorEnvio(null)
   }
@@ -289,10 +312,53 @@ export default function Reportar() {
                 </div>
               )}
 
-              {/* Paso 5: nombre (unico campo de texto libre obligatorio ademas de la descripcion de "otro") */}
+              {/* Paso 5: foto del dano o la falla (OPCIONAL, va antes del nombre) */}
               {funcional !== null && (
                 <div>
-                  <label className="text-sm font-medium text-slate-700 block mb-1">5. Tu nombre</label>
+                  <p className="text-sm font-medium text-slate-700 mb-1">
+                    5. Foto del daño o la falla <span className="font-normal text-slate-400">(opcional)</span>
+                  </p>
+                  {foto ? (
+                    <div className="relative">
+                      <img
+                        src={foto.vistaPrevia}
+                        alt="Foto adjunta del daño"
+                        className="w-full max-h-56 object-cover rounded-lg border border-slate-200"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFoto(null)}
+                        className="mt-2 text-xs text-red-600 font-medium underline"
+                      >
+                        Quitar foto
+                      </button>
+                    </div>
+                  ) : (
+                    <label
+                      htmlFor="foto-dano"
+                      className="flex flex-col items-center justify-center gap-1 border-2 border-dashed border-slate-300 rounded-lg px-3 py-5 text-sm text-slate-600 cursor-pointer hover:border-slate-400"
+                    >
+                      <span className="font-medium">
+                        {procesandoFoto ? 'Preparando foto...' : 'Tomar o elegir una foto'}
+                      </span>
+                      <span className="text-[11px] text-slate-400">Ayuda al técnico a ver qué pasó. Puedes omitirla.</span>
+                    </label>
+                  )}
+                  <input
+                    id="foto-dano"
+                    type="file"
+                    accept="image/*"
+                    onChange={elegirFoto}
+                    className="sr-only"
+                  />
+                  {errorFoto && <p className="text-xs text-red-600 mt-1">{errorFoto}</p>}
+                </div>
+              )}
+
+              {/* Paso 6: nombre (unico campo de texto libre obligatorio ademas de la descripcion de "otro") */}
+              {funcional !== null && (
+                <div>
+                  <label className="text-sm font-medium text-slate-700 block mb-1">6. Tu nombre</label>
                   <input
                     type="text"
                     value={nombre}

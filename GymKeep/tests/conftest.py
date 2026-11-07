@@ -81,6 +81,43 @@ CATALOGO_TIPOS_FALLA = [
 ]
 
 
+class _ColeccionFalsa:
+    """Coleccion Mongo en memoria con lo minimo que usa services/fotos_incidencias."""
+
+    def __init__(self):
+        self.docs = {}
+
+    def replace_one(self, filtro, doc, upsert=False):
+        self.docs[filtro["_id"]] = doc
+
+    def find_one(self, filtro, proyeccion=None):
+        return self.docs.get(filtro["_id"])
+
+    def find(self, filtro, proyeccion=None):
+        ids = filtro["_id"]["$in"]
+        return [{"_id": i} for i in ids if i in self.docs]
+
+    def delete_many(self, filtro):
+        for i in filtro["_id"]["$in"]:
+            self.docs.pop(i, None)
+
+
+class MongoFotosFalso:
+    def __init__(self):
+        self.fotos_incidencias = _ColeccionFalsa()
+
+
+@pytest.fixture(autouse=True)
+def mongo_fotos_incidencias(monkeypatch):
+    """Las fotos de incidencias van a Mongo; en los tests se usa un Mongo falso en memoria
+    (si no, cada listado intentaria conectarse y esperaria el timeout)."""
+    from app.services import fotos_incidencias
+
+    falso = MongoFotosFalso()
+    monkeypatch.setattr(fotos_incidencias, "get_mongo_db", lambda: falso)
+    return falso
+
+
 @pytest.fixture()
 def db_session():
     Base.metadata.create_all(bind=engine)

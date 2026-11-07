@@ -6,6 +6,7 @@ import PrioridadBadge from '../components/PrioridadBadge.jsx'
 import TipoFallaBadge from '../components/TipoFallaBadge.jsx'
 import CategoriaBadge from '../components/CategoriaBadge.jsx'
 import Paginacion from '../components/Paginacion.jsx'
+import FotoIncidencia from '../components/FotoIncidencia.jsx'
 import ConfirmarEliminar from '../components/ConfirmarEliminar.jsx'
 import { formatearFechaHora } from '../utils/formato.js'
 import { getSaludEquipo } from '../utils/saludEquipo.js'
@@ -244,6 +245,7 @@ export default function Incidencias() {
                 <th className="px-4 py-2">Equipo</th>
                 <th className="px-4 py-2">Categoría</th>
                 <th className="px-4 py-2">Tipo de falla</th>
+                <th className="px-4 py-2">Foto</th>
                 <th className="px-4 py-2">Reportado por</th>
                 <th className="px-4 py-2">Prioridad</th>
                 <th className="px-4 py-2">Estado</th>
@@ -254,14 +256,14 @@ export default function Incidencias() {
             <tbody>
               {cargando && (
                 <tr>
-                  <td className="px-4 py-6 text-slate-400 text-center" colSpan={9}>
+                  <td className="px-4 py-6 text-slate-400 text-center" colSpan={10}>
                     Cargando...
                   </td>
                 </tr>
               )}
               {!cargando && incidencias.length === 0 && (
                 <tr>
-                  <td className="px-4 py-6 text-slate-400 text-center" colSpan={9}>
+                  <td className="px-4 py-6 text-slate-400 text-center" colSpan={10}>
                     {hayFiltrosActivos
                       ? 'No hay incidencias que coincidan con estos filtros.'
                       : 'Todavía no hay incidencias registradas.'}
@@ -291,6 +293,9 @@ export default function Incidencias() {
                     </td>
                     <td className="px-4 py-2">
                       <TipoFallaBadge tipoFalla={incidencia.tipo_falla} />
+                    </td>
+                    <td className="px-4 py-2">
+                      <FotoIncidencia incidencia={incidencia} />
                     </td>
                     <td className="px-4 py-2">{incidencia.reportado_por || '—'}</td>
                     <td className="px-4 py-2">

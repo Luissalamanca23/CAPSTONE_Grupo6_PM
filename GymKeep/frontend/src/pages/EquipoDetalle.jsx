@@ -7,6 +7,7 @@ import CategoriaBadge from '../components/CategoriaBadge.jsx'
 import PrioridadBadge from '../components/PrioridadBadge.jsx'
 import TipoFallaBadge from '../components/TipoFallaBadge.jsx'
 import Paginacion from '../components/Paginacion.jsx'
+import FotoIncidencia from '../components/FotoIncidencia.jsx'
 import { FotoEditable } from '../components/FotoReferencia.jsx'
 import EditarEquipo from '../components/EditarEquipo.jsx'
 import ConfirmarEliminar from '../components/ConfirmarEliminar.jsx'
@@ -447,6 +448,7 @@ export default function EquipoDetalle() {
                   <th className="px-5 py-2">Categoría</th>
                   <th className="px-5 py-2">Tipo de falla</th>
                   <th className="px-5 py-2">Reportado por</th>
+                  <th className="px-5 py-2">Foto</th>
                   <th className="px-5 py-2">Prioridad</th>
                   <th className="px-5 py-2">Estado</th>
                 </tr>
@@ -454,7 +456,7 @@ export default function EquipoDetalle() {
               <tbody>
                 {incidenciasFiltradas.length === 0 && (
                   <tr>
-                    <td className="px-5 py-4 text-slate-400" colSpan={6}>
+                    <td className="px-5 py-4 text-slate-400" colSpan={7}>
                       {incidencias.length === 0
                         ? 'Esta máquina todavía no tiene incidencias reportadas.'
                         : 'Ninguna incidencia coincide con estos filtros.'}
@@ -471,6 +473,9 @@ export default function EquipoDetalle() {
                       <TipoFallaBadge tipoFalla={incidencia.tipo_falla} />
                     </td>
                     <td className="px-5 py-2">{incidencia.reportado_por || '—'}</td>
+                    <td className="px-5 py-2">
+                      <FotoIncidencia incidencia={incidencia} />
+                    </td>
                     <td className="px-5 py-2">
                       <PrioridadBadge prioridad={incidencia.prioridad} />
                     </td>
