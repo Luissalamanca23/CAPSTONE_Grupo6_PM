@@ -42,3 +42,7 @@ GymKeep/demo-publica/.datos-reales
 # Registro del ultimo arranque de la demo
 GymKeep/demo-publica/ultimo-arranque.log
 GymKeep/demo-publica/_to_delete/
+
+# Modulo de vision (pipeline de camaras): es privado y no se publica en este repositorio.
+# Quien lo tenga lo deja en esta carpeta; git la ignora completa (codigo, videos y entorno).
+GymKeep/vision/

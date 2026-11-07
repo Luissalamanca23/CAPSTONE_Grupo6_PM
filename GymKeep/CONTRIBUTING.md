@@ -151,8 +151,8 @@ Si el cambio es chico (typo, ajuste menor) está bien trabajar directo en
 - Cambios a mantenimientos/costos → `app/crud/mantenimiento.py`,
   `app/api/v1/mantenimientos.py`, y en el frontend `frontend/src/pages/Costos.jsx`
   y `EquipoDetalle.jsx`.
-- Módulo de cámaras/IA → el pipeline de visión vive en `vision/` (entorno propio, ver
-  `vision/README.md`). En el backend: `app/models/gymkeep.py` (`Camara`, `ModeloIA`,
+- Módulo de cámaras/IA → el pipeline de visión es un módulo privado: no está en este
+  repositorio (git ignora `vision/`). En el backend: `app/models/gymkeep.py` (`Camara`, `ModeloIA`,
   `EventoIAResumen`, `SesionUso`), `app/services/ai_event_service.py` (consolida los
   eventos en `sesiones_uso`), `app/api/v1/camaras.py` / `modelos_ia.py` / `eventos_ia.py` /
   `sesiones_uso.py`, y las colecciones de Mongo en `mongo/init-mongo.js`.

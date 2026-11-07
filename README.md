@@ -70,7 +70,7 @@ Scrum, con sprints de 2 semanas durante las 18 semanas del semestre:
 | API backend | Implementado |
 | Reporte por QR | Implementado |
 | Panel web de gestión | Implementado |
-| Módulo de visión por computadora | En integración (rama `modulo-vision`) |
+| Módulo de visión por computadora | Implementado (módulo privado: no se publica en este repositorio) |
 | Panel de costos (TCO) y autenticación | Pendiente |
 
 ## Tecnologías

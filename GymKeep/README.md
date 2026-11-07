@@ -49,7 +49,7 @@ y control de gastos.
   al escanearse, abre el formulario público de reporte para ese equipo. Pensado para
   imprimir y pegar en la máquina.
 - **Cámaras / modelos de IA / eventos de IA**: inventario de cámaras y sus modelos, con
-  `POST /eventos-ia/` para recibir los eventos del módulo de visión (`vision/`): documento
+  `POST /eventos-ia/` para recibir los eventos del módulo de visión: documento
   completo a MongoDB y resumen consultable en `eventos_ia_resumen`. Los eventos de uso
   (`inicio_uso` / `uso_en_curso` / `fin_uso`) se consolidan en `sesiones_uso`, y el endpoint
   es idempotente por `event_uuid` (reenviar un evento no lo duplica).
@@ -135,8 +135,8 @@ EMPRESA
   con su propia `categoria`, `prioridad_base` y flags `permite_reporte_qr` /
   `permite_deteccion_ia`.
 - Cámaras/IA (`camaras`, `modelos_ia`, `eventos_ia_resumen`, `sesiones_uso`) y auditoría
-  (`registros_auditoria`). El módulo de visión por computadora (`vision/`) alimenta
-  `sesiones_uso` a través de `POST /eventos-ia/`.
+  (`registros_auditoria`). El módulo de visión por computadora alimenta `sesiones_uso` a
+  través de `POST /eventos-ia/`.
 
 Ver `GymKeep_BDD_Completa/` para el paquete original de diseño de la base de datos
 (documento de referencia; no es lo que corre en producción, eso es
@@ -168,7 +168,7 @@ GymKeep/
 │                                        incidencias, mantenimientos, camaras, modelos_ia,
 │                                        eventos_ia, sesiones_uso
 ├── tests/                            # pytest (SQLite en memoria)
-├── vision/                           # Módulo de visión por computadora (ver vision/README.md)
+├── vision/                           # Módulo de visión (privado: no se publica en este repositorio)
 ├── frontend/
 │   └── src/
 │       ├── layouts/AdminLayout.jsx         # Menu lateral/responsive + boton de Ayuda
@@ -293,26 +293,23 @@ en `127.0.0.1`; y las claves son obligatorias (sin valores por defecto). Si falt
 ## Módulo de visión en el panel
 
 El backend de visión (`/api/v1/vision/...`) viene incluido en la API. El pipeline que mira
-el video (YOLO) corre aparte, en su propio contenedor, y **no** se levanta con el
-`docker compose up` normal. Sin pipeline las pantallas **Uso de máquinas** y **Cámaras**
+el video (YOLO) es un **módulo privado del equipo**: no se publica en este repositorio y corre
+aparte, en su propio contenedor. Sin pipeline las pantallas **Uso de máquinas** y **Cámaras**
 funcionan igual (se puede subir una imagen de referencia y dibujar zonas), pero sin datos
-en vivo. Para verlo andando con el video de prueba:
+en vivo.
+
+Quien tenga el módulo lo deja en `GymKeep/vision/` (git ignora esa carpeta) y, desde
+`GymKeep`, levanta todo con un comando (db, mongo, api y visión):
 
 ```bash
-# 1) Copia el video a GymKeep/vision/datos/cctv_cintas.mp4 (esa carpeta no se sube a git)
-# 2) Desde GymKeep: UN comando levanta todo (db, mongo, api y visión):
 docker compose -f docker-compose.vision.yml up -d --build
 docker compose -f docker-compose.vision.yml logs -f vision     # seguir lo que hace
 ```
 
-Listo: el contenedor espera a la API, deja las zonas de las 3 cintas en la cámara `CAM-01` y analiza
-el video en bucle como si fuera una cámara en vivo. Se ve en el panel, **Cámaras → CAM-01**
-(`http://localhost:5173/camaras`); el video en vivo también se abre directo en
-`http://localhost:8000/api/v1/vision/camaras/1/stream` (cambia el `1` por el id de la cámara) y
-todos los endpoints están en `http://localhost:8000/docs`, sección *vision*. La primera
-construcción es lenta (descarga PyTorch y los pesos de YOLO). Las zonas iniciales son aproximadas:
-se ajustan arrastrando los vértices en el panel. Para otro video o una cámara RTSP, ver las
-variables `VISION_*` en `vision/INTEGRACION.md` (§6). Detalles del pipeline: `vision/README.md`.
+Las cámaras se ven en el panel, en **Cámaras** (`http://localhost:5173/camaras`); el video en
+vivo también se abre directo en `http://localhost:8000/api/v1/vision/camaras/1/stream` (cambia
+el `1` por el id de la cámara) y todos los endpoints están en `http://localhost:8000/docs`,
+sección *vision*.
 
 ## Ver las bases de datos
 
@@ -414,12 +411,12 @@ pytest
 
 `requirements.txt` trae solo lo necesario para ejecutar la API (es lo que instala el
 Dockerfile); las herramientas de prueba están en `requirements-dev.txt`. El workflow
-`.github/workflows/ci.yml` corre los tests del backend, los del módulo de visión y el build
-del frontend en cada push a `main` y en cada pull request.
+`.github/workflows/ci.yml` corre los tests del backend y el build del frontend en cada push
+a `main` y en cada pull request.
 
 Los tests usan SQLite en memoria (no necesitan Docker/Postgres/Mongo corriendo).
-`pytest.ini` limita esta corrida a `tests/`: el módulo de visión tiene sus propios tests y
-su propio entorno (`cd vision && .venv/bin/python -m pytest`, ver `vision/README.md`).
+`pytest.ini` limita esta corrida a `tests/`; el módulo de visión es privado y lleva sus
+propios tests.
 
 ## Política de esquema de base de datos
 

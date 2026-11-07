@@ -1,4 +1,5 @@
-# Pipeline de vision en Docker (CPU, no requiere GPU). Ver vision/INTEGRACION.md.
+# Pipeline de vision en Docker (CPU, no requiere GPU). Necesita el modulo de vision en ./vision:
+# es privado y no se publica en este repositorio, asi que sin el este archivo no levanta.
 #
 # UN SOLO COMANDO levanta todo: base de datos, mongo, API y vision (este archivo incluye al
 # docker-compose.yml, asi que no hay que combinar archivos):
