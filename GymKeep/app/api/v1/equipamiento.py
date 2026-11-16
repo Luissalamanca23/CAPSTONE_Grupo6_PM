@@ -11,7 +11,14 @@ from app.core.database import get_db
 from app.crud import equipamiento as crud_equipamiento
 from app.crud import sucursal as crud_sucursal
 from app.crud import zona as crud_zona
-from app.schemas.equipamiento import EquipoCreate, EquipoOut, EquipoUpdate, QrEquipoOut
+from app.schemas.equipamiento import (
+    EquipoCreate,
+    EquipoOut,
+    EquipoQrPublicoOut,
+    EquipoUpdate,
+    QrEquipoOut,
+    TcoEquipoOut,
+)
 from app.services import eliminacion
 
 router = APIRouter()
@@ -49,10 +56,19 @@ def listar_equipos(
     return crud_equipamiento.list_equipos(db, skip=skip, limit=limit, sucursal_id=sucursal_id)
 
 
-@router.get("/qr/{token}", response_model=EquipoOut)
+@router.get("/tco", response_model=list[TcoEquipoOut])
+def listar_tco(sucursal_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """Costo total de propiedad (TCO) de cada equipo: precio de compra + mantenciones (RF-32).
+    Ordenado del equipo mas caro al mas barato. Debe declararse antes de `/{equipo_id}`."""
+    equipos = crud_equipamiento.list_equipos(db, skip=0, limit=500, sucursal_id=sucursal_id)
+    return sorted(crud_equipamiento.calcular_tco(db, equipos), key=lambda t: t.tco, reverse=True)
+
+
+@router.get("/qr/{token}", response_model=EquipoQrPublicoOut)
 def obtener_equipo_por_qr(token: str, db: Session = Depends(get_db)):
     """Obtiene un equipo a partir del token del QR escaneado (usado por el formulario publico).
-    Solo resuelve QR activos y no expirados."""
+    Solo resuelve QR activos y no expirados. Es una ruta publica: devuelve unicamente los datos
+    minimos de la maquina (ver EquipoQrPublicoOut)."""
     equipo = crud_equipamiento.get_equipo_by_token(db, token)
     if not equipo:
         raise HTTPException(status_code=404, detail="El codigo QR no es valido o ya no esta activo.")
@@ -66,6 +82,15 @@ def obtener_equipo(equipo_id: int, db: Session = Depends(get_db)):
     if not equipo:
         raise HTTPException(status_code=404, detail="Equipo no encontrado.")
     return equipo
+
+
+@router.get("/{equipo_id}/tco", response_model=TcoEquipoOut)
+def obtener_tco_equipo(equipo_id: int, db: Session = Depends(get_db)):
+    """TCO de un equipo: precio de compra + costo de todas sus mantenciones (RF-32)."""
+    equipo = crud_equipamiento.get_equipo(db, equipo_id)
+    if not equipo:
+        raise HTTPException(status_code=404, detail="Equipo no encontrado.")
+    return crud_equipamiento.calcular_tco(db, [equipo])[0]
 
 
 @router.get("/{equipo_id}/codigo-qr")

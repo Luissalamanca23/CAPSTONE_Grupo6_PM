@@ -60,6 +60,7 @@ class EquipoBase(BaseModel):
     fecha_adquisicion: Optional[date] = None
     fecha_instalacion: Optional[date] = None
     vida_util_meses: Optional[int] = Field(default=None, gt=0)
+    costo_adquisicion: Optional[float] = Field(default=None, ge=0, description="Precio de compra (CLP).")
     observaciones: Optional[str] = None
     estado: EstadoEquipo = EstadoEquipo.operativo
 
@@ -85,6 +86,7 @@ class EquipoUpdate(BaseModel):
     fecha_adquisicion: Optional[date] = None
     fecha_instalacion: Optional[date] = None
     vida_util_meses: Optional[int] = Field(default=None, gt=0)
+    costo_adquisicion: Optional[float] = Field(default=None, ge=0)
     observaciones: Optional[str] = None
     estado: Optional[EstadoEquipo] = None
 
@@ -96,6 +98,18 @@ class EquipoUpdate(BaseModel):
         # Un campo vaciado en el formulario llega como "": se guarda como NULL (importa en
         # numero_serie, que es unico: dos "" chocarian entre si).
         return valor.strip() or None if valor is not None else None
+
+
+class EquipoQrPublicoOut(BaseModel):
+    """Lo unico que ve quien escanea el QR sin haber iniciado sesion: lo justo para saber que
+    maquina esta reportando (nada de numero de serie, observaciones, fechas ni el QR mismo)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    nombre: str
+    categoria: Optional[str] = None
+    estado: EstadoEquipo
+    zona: Optional[ZonaMini] = None
 
 
 class EquipoOut(EquipoBase):
@@ -111,3 +125,21 @@ class EquipoOut(EquipoBase):
     # Cuenta de incidencias pendientes/en_proceso: es lo que define el color de salud del
     # equipo en el panel (verde/naranjo/rojo), ver frontend/src/utils/saludEquipo.js.
     incidencias_abiertas: int = 0
+
+
+class TcoEquipoOut(BaseModel):
+    """Costo total de propiedad (TCO) de un equipo (RF-32): lo que costo comprarlo mas lo que se
+    ha gastado en mantenerlo (cada mantencion registra su costo total: repuestos + mano de obra)."""
+
+    equipo_id: int
+    codigo_activo: str
+    nombre: str
+    categoria: Optional[str] = None
+    # None si todavia no se registro el precio de compra: el TCO entonces solo suma mantenciones.
+    costo_adquisicion: Optional[float] = None
+    adquisicion_registrada: bool
+    costo_mantenciones: float
+    costo_correctivo: float
+    costo_preventivo: float
+    cantidad_mantenciones: int
+    tco: float

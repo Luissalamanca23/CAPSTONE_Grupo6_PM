@@ -183,6 +183,52 @@ export function calcularAnalitica({ incidencias, mantenimientos, equipos, uso, e
     (m) => aNumero(m.costo_total)
   ).slice(0, 5)
 
+  // --- costo y fallas por marca y por categoria (RF-29): todo sale de los mismos datos que el
+  // gasto total, asi que las barras suman el total del periodo (lo que no tiene marca o
+  // categoria queda en "Sin marca" / "Sin categoría", nunca se pierde).
+  const equipoPorId = new Map(equipos.map((e) => [e.id, e]))
+  const claveMarca = (equipo) => {
+    const marca = (equipo?.marca || '').trim()
+    return marca ? { id: marca.toLowerCase(), etiqueta: marca } : { id: '__sin__', etiqueta: 'Sin marca' }
+  }
+  const claveCategoria = (equipo) => {
+    const categoria = equipo?.categoria
+    return { id: categoria || '__sin__', etiqueta: etiquetasCategoria[categoria] || categoria || 'Sin categoría' }
+  }
+  const gastoPorMarca = plegarCola(
+    agrupar(mantEnPeriodo, (m) => claveMarca(equipoPorId.get(m.equipo_id ?? m.equipo?.id)), (m) => aNumero(m.costo_total)).filter((x) => x.valor > 0),
+    6
+  )
+  const gastoPorCategoria = plegarCola(
+    agrupar(mantEnPeriodo, (m) => claveCategoria(equipoPorId.get(m.equipo_id ?? m.equipo?.id)), (m) => aNumero(m.costo_total)).filter((x) => x.valor > 0),
+    6
+  )
+  // Marcas mas problematicas: las que acumulan mas incidencias en el periodo (se informa
+  // tambien cuantos equipos tiene la marca, para no castigar a la que simplemente tiene mas).
+  const equiposPorMarca = new Map()
+  for (const e of equipos) {
+    const k = claveMarca(e).id
+    equiposPorMarca.set(k, (equiposPorMarca.get(k) || 0) + 1)
+  }
+  const gastoDeMarca = new Map(
+    agrupar(mantEnPeriodo, (m) => claveMarca(equipoPorId.get(m.equipo_id ?? m.equipo?.id)), (m) => aNumero(m.costo_total)).map((x) => [x.id, x.valor])
+  )
+  const marcasProblematicas = agrupar(reportadas, (i) => claveMarca(equipoPorId.get(i.equipo_id)))
+    .filter((x) => x.id !== '__sin__')
+    .map((x) => {
+      const equiposMarca = equiposPorMarca.get(x.id) || 0
+      return {
+        id: x.id,
+        etiqueta: x.etiqueta,
+        valor: x.valor,
+        equipos: equiposMarca,
+        fallasPorEquipo: equiposMarca ? x.valor / equiposMarca : null,
+        gasto: gastoDeMarca.get(x.id) || 0,
+      }
+    })
+    .sort((a, b) => b.valor - a.valor || b.gasto - a.gasto)
+    .slice(0, 5)
+
   // --- mapa de calor: dia de la semana x bloque de 4 horas
   const matriz = DIAS_SEMANA.map(() => BLOQUES_HORA.map(() => 0))
   for (const i of reportadas) {
@@ -259,6 +305,9 @@ export function calcularAnalitica({ incidencias, mantenimientos, equipos, uso, e
     categoriasEquipo,
     rankingFallas,
     rankingGasto,
+    gastoPorMarca,
+    gastoPorCategoria,
+    marcasProblematicas,
     calor: { matriz, maximo: maximoCalor },
     flota,
     usoSemana,

@@ -2,10 +2,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models.gymkeep import EstadoEquipo, EstadoIncidencia, Equipo, QrEquipo
-from app.schemas.equipamiento import EquipoCreate, EquipoUpdate
+from app.models.gymkeep import EstadoEquipo, EstadoIncidencia, Equipo, Mantenimiento, QrEquipo
+from app.schemas.equipamiento import EquipoCreate, EquipoUpdate, TcoEquipoOut
 
 # selectinload (no joinedload) para incidencias: es una relacion 1:N y evita duplicar filas
 # de equipo al traer el join; se usa solo para contar abiertas (equipo.incidencias_abiertas).
@@ -126,3 +127,57 @@ def tiene_incidencias(db: Session, equipo: Equipo) -> bool:
 def delete_equipo(db: Session, equipo: Equipo) -> None:
     db.delete(equipo)
     db.commit()
+
+
+def _a_float(valor) -> float:
+    return round(float(valor or 0), 2)
+
+
+def calcular_tco(db: Session, equipos: list[Equipo]) -> list[TcoEquipoOut]:
+    """Costo total de propiedad de cada equipo (RF-32): precio de compra + costo de todas sus
+    mantenciones (cada una registra su costo total, que ya incluye repuestos y mano de obra).
+    Un equipo sin mantenciones ni precio de compra da TCO 0; sin precio de compra solo suma
+    mantenciones (`adquisicion_registrada` lo indica)."""
+    if not equipos:
+        return []
+    ids = [e.id for e in equipos]
+    filas = (
+        db.query(
+            Mantenimiento.equipo_id,
+            Mantenimiento.tipo,
+            func.coalesce(func.sum(Mantenimiento.costo_total), 0),
+            func.count(Mantenimiento.id),
+        )
+        .filter(Mantenimiento.equipo_id.in_(ids))
+        .group_by(Mantenimiento.equipo_id, Mantenimiento.tipo)
+        .all()
+    )
+    por_equipo: dict[int, dict] = {}
+    for equipo_id, tipo, suma, cantidad in filas:
+        acumulado = por_equipo.setdefault(equipo_id, {"correctivo": 0.0, "preventivo": 0.0, "otros": 0.0, "cantidad": 0})
+        clave = tipo if tipo in ("correctivo", "preventivo") else "otros"
+        acumulado[clave] += float(suma or 0)
+        acumulado["cantidad"] += int(cantidad or 0)
+
+    resultado = []
+    for equipo in equipos:
+        datos = por_equipo.get(equipo.id, {"correctivo": 0.0, "preventivo": 0.0, "otros": 0.0, "cantidad": 0})
+        mantenciones = datos["correctivo"] + datos["preventivo"] + datos["otros"]
+        adquisicion = None if equipo.costo_adquisicion is None else _a_float(equipo.costo_adquisicion)
+        resultado.append(
+            TcoEquipoOut(
+                equipo_id=equipo.id,
+                codigo_activo=equipo.codigo_activo,
+                nombre=equipo.nombre,
+                categoria=equipo.categoria,
+                costo_adquisicion=adquisicion,
+                adquisicion_registrada=adquisicion is not None,
+                costo_mantenciones=_a_float(mantenciones),
+                costo_correctivo=_a_float(datos["correctivo"]),
+                costo_preventivo=_a_float(datos["preventivo"]),
+                cantidad_mantenciones=datos["cantidad"],
+                tco=_a_float((adquisicion or 0) + mantenciones),
+            )
+        )
+    return resultado
+

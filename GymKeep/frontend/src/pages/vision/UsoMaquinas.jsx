@@ -2,7 +2,9 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { visionApi } from '../../api/vision.js'
 import CategoriaEquipoBadge from '../../components/CategoriaEquipoBadge.jsx'
+import Paginacion from '../../components/Paginacion.jsx'
 import StatCard from '../../components/StatCard.jsx'
+import { usePaginacion } from '../../utils/paginacion.js'
 import { ESTADOS_VIVO, formatearHoras, haceCuanto, textoEstadoVivo } from './uso.js'
 import usePolling from './usePolling.js'
 
@@ -133,6 +135,8 @@ export default function UsoMaquinas() {
       .sort(ORDENES[orden].comparar)
   }, [maquinas, busqueda, orden, soloMedidas])
 
+  const paginacion = usePaginacion(visibles, 12, `${busqueda}|${orden}|${soloMedidas}`)
+
   const totales = useMemo(() => {
     if (!maquinas) return null
     const medidas = maquinas.filter((m) => m.medido_por_camara)
@@ -203,9 +207,12 @@ export default function UsoMaquinas() {
         <p className="text-sm text-slate-500">No hay máquinas que coincidan con la búsqueda.</p>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {visibles.map((m) => (
+        {paginacion.visibles.map((m) => (
           <TarjetaMaquina key={m.equipo_id} maquina={m} />
         ))}
+      </div>
+      <div className="rounded-lg border border-slate-200 bg-white empty:hidden">
+        <Paginacion paginacion={paginacion} />
       </div>
     </div>
   )

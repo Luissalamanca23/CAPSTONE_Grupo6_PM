@@ -90,9 +90,13 @@ if ($Camaras) {
     Write-Host "    Video: $($elegido.Name)   Camara: $Camara"
     $env:VISION_FUENTE = "/app/datos/$($elegido.Name)"
     $env:VISION_CAMARA = $Camara
-    # La demo esta en internet: editar zonas/parametros pide PIN y el pipeline manda una clave.
-    if (-not $env:VISION_PIN) { $env:VISION_PIN = (Get-Random -Minimum 100000 -Maximum 999999).ToString() }
-    if (-not $env:VISION_PIPELINE_KEY) { $env:VISION_PIPELINE_KEY = -join ((1..24) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) }) }
+    # La demo esta en internet: todo el panel pide login y el pipeline entra con una clave al azar.
+    if (-not $env:VISION_PIPELINE_KEY) {
+        $bytes = New-Object byte[] 16
+        $rng = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
+        $rng.GetBytes($bytes)
+        $env:VISION_PIPELINE_KEY = -join ($bytes | ForEach-Object { '{0:x2}' -f $_ })
+    }
 }
 
 # ---- 3. Sistema ----
@@ -105,7 +109,7 @@ Paso 'Esperando a que responda'
 $listo = $false
 for ($i = 0; $i -lt 90; $i++) {
     try {
-        $r = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Puerto/api/v1/equipamiento/?limit=1" -TimeoutSec 3
+        $r = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Puerto/api/v1/auth/estado" -TimeoutSec 3
         if ($r.StatusCode -eq 200) { $listo = $true; break }
     } catch { }
     Start-Sleep -Seconds 2
@@ -174,9 +178,9 @@ Write-Host ' GymKeep esta publicado' -ForegroundColor Green
 Write-Host "   Web (cualquier celular o PC):  $UrlPublica"
 Write-Host "   QR de una maquina:             $UrlPublica/api/v1/equipamiento/<id>/codigo-qr"
 Write-Host '   (tambien en la web: Equipos > Ver detalle)'
+Write-Host '   El panel pide RUN y clave. Si aun no tienes cuenta, ejecuta crear-admin.bat (carpeta GymKeep).'
 if ($Camaras) {
     Write-Host "   Camaras:                       $UrlPublica/camaras"
-    Write-Host "   PIN para editar zonas/parametros: $($env:VISION_PIN)   (no lo compartas)"
     Write-Host '   La primera vez el pipeline tarda 1-2 minutos en mostrar la imagen. Si no aparece:'
     Write-Host "     docker compose -f `"$Compose`" logs --tail 30 vision"
 }

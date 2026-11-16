@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api/client.js'
 import ConfirmarEliminar from '../components/ConfirmarEliminar.jsx'
+import Paginacion from '../components/Paginacion.jsx'
+import { usePaginacion } from '../utils/paginacion.js'
 
 const EMPRESA_INICIAL = { razon_social: '' }
 const SUCURSAL_INICIAL = { codigo: '', nombre: '', ciudad: '' }
@@ -82,6 +84,8 @@ export default function Sucursales() {
     }
   }
 
+  const paginacion = usePaginacion(sucursales, 5)
+
   if (cargando) return <p className="text-slate-500">Cargando...</p>
 
   return (
@@ -155,7 +159,7 @@ export default function Sucursales() {
             {sucursales.length === 0 && (
               <p className="text-sm text-slate-400">Todavía no hay sucursales registradas.</p>
             )}
-            {sucursales.map((sucursal) => (
+            {paginacion.visibles.map((sucursal) => (
               <div key={sucursal.id} className="bg-white rounded-lg border border-slate-200 shadow-sm">
                 <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
                   <div>
@@ -223,6 +227,9 @@ export default function Sucursales() {
                 </div>
               </div>
             ))}
+            <div className="rounded-lg border border-slate-200 bg-white empty:hidden">
+              <Paginacion paginacion={paginacion} />
+            </div>
           </div>
         </>
       )}

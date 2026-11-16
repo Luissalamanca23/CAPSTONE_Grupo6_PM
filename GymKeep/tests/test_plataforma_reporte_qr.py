@@ -43,6 +43,25 @@ def test_dos_reportes_no_funcional_dejan_el_equipo_fuera_de_servicio(client, suc
     assert _estado_equipo(client, equipo["id"]) == "fuera_de_servicio"
 
 
+def test_equipo_fuera_de_servicio_no_acepta_mas_reportes_hasta_ser_habilitado(client, sucursal_id):
+    equipo = _crear_equipo(client, sucursal_id, "EQ-P106")
+    token = equipo["qr_activo"]["token"]
+    _reportar(client, token, funcional=False)
+    _reportar(client, token, funcional=False)
+    assert _estado_equipo(client, equipo["id"]) == "fuera_de_servicio"
+
+    bloqueado = _reportar(client, token, funcional=False)
+    assert bloqueado.status_code == 409
+    assert "fuera de servicio" in bloqueado.json()["detail"]
+    assert _reportar(client, token, funcional=True).status_code == 409
+    # El portal publico sigue mostrando el estado para avisar a quien escanea el QR.
+    assert client.get(f"/api/v1/equipamiento/qr/{token}").json()["estado"] == "fuera_de_servicio"
+
+    # Cuando el personal la habilita desde el panel, vuelve a aceptar reportes.
+    assert client.patch(f"/api/v1/equipamiento/{equipo['id']}", json={"estado": "operativo"}).status_code == 200
+    assert _reportar(client, token, funcional=True).status_code == 201
+
+
 def test_reportes_que_si_funcionan_no_cuentan_para_fuera_de_servicio(client, sucursal_id):
     equipo = _crear_equipo(client, sucursal_id, "EQ-P102")
     token = equipo["qr_activo"]["token"]

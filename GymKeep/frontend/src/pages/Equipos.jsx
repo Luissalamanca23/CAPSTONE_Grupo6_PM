@@ -21,6 +21,7 @@ const FORM_INICIAL = {
   categoria: '',
   marca: '',
   modelo: '',
+  costo_adquisicion: '',
 }
 
 function Campo({ etiqueta, valor, onChange, requerido }) {
@@ -77,7 +78,7 @@ export default function Equipos() {
   function cargarEquipos() {
     setCargando(true)
     api
-      .listarEquipos()
+      .listarTodosLosEquipos()
       .then(setEquipos)
       .catch((err) => setError(err.message))
       .finally(() => setCargando(false))
@@ -135,6 +136,7 @@ export default function Equipos() {
         ...form,
         sucursal_id: Number(form.sucursal_id),
         zona_id: form.zona_id ? Number(form.zona_id) : null,
+        costo_adquisicion: form.costo_adquisicion === '' ? null : Number(form.costo_adquisicion),
       })
       if (foto) {
         // La maquina ya existe: si la foto falla (PIN cancelado, formato raro) no se pierde nada.
@@ -247,6 +249,18 @@ export default function Equipos() {
           </label>
           <Campo etiqueta="Marca" valor={form.marca} onChange={(v) => setForm({ ...form, marca: v })} />
           <Campo etiqueta="Modelo" valor={form.modelo} onChange={(v) => setForm({ ...form, modelo: v })} />
+          <label className="text-xs text-slate-500 flex flex-col gap-1">
+            Costo de compra (CLP)
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={form.costo_adquisicion}
+              onChange={(e) => setForm({ ...form, costo_adquisicion: e.target.value })}
+              placeholder="Opcional"
+              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm text-slate-900"
+            />
+          </label>
           <CampoFoto archivo={foto} onChange={setFoto} className="sm:col-span-2 lg:col-span-5" />
           <button
             type="submit"

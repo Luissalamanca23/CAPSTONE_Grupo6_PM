@@ -1,6 +1,3 @@
-import threading
-import time
-from collections import defaultdict, deque
 from datetime import date
 from typing import Optional
 
@@ -8,12 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.limitador import LimitadorVentana
 from app.crud import equipamiento as crud_equipamiento
 from app.crud import incidencia as crud_incidencia
 from app.crud import tipo_falla as crud_tipo_falla
 from app.services import eliminacion, fotos_incidencias
 from app.services.vision_service import ImagenInvalida
-from app.models.gymkeep import EstadoIncidencia, PrioridadIncidencia
+from app.models.gymkeep import EstadoEquipo, EstadoIncidencia, PrioridadIncidencia
 from app.schemas.incidencia import (
     IncidenciaCreate,
     IncidenciaCreateByQR,
@@ -25,33 +23,6 @@ from app.schemas.incidencia import (
 router = APIRouter()
 
 
-class LimitadorVentana:
-    """Limitador simple en memoria (ventana deslizante): permite `maximo` eventos por
-    `ventana` segundos para cada clave. Es por proceso: sirve contra abuso casual del
-    formulario publico; si la API corre en varios procesos, cada uno cuenta aparte."""
-
-    def __init__(self, maximo: int, ventana: float):
-        self.maximo = maximo
-        self.ventana = ventana
-        self._eventos: dict = defaultdict(deque)
-        self._lock = threading.Lock()
-
-    def permitir(self, clave) -> bool:
-        ahora = time.monotonic()
-        with self._lock:
-            cola = self._eventos[clave]
-            while cola and ahora - cola[0] > self.ventana:
-                cola.popleft()
-            if len(cola) >= self.maximo:
-                return False
-            cola.append(ahora)
-            return True
-
-    def reiniciar(self) -> None:
-        with self._lock:
-            self._eventos.clear()
-
-
 VENTANA_REPORTE_QR_SEG = 10 * 60
 # 5 reportes por token QR + IP, y un tope mayor por IP para que nadie recorra muchos QR.
 limitador_qr_token = LimitadorVentana(maximo=5, ventana=VENTANA_REPORTE_QR_SEG)
@@ -59,10 +30,12 @@ limitador_qr_ip = LimitadorVentana(maximo=30, ventana=VENTANA_REPORTE_QR_SEG)
 
 
 @router.get("/tipos-falla", response_model=list[TipoFallaOut])
-def listar_tipos_falla(solo_reporte_qr: bool = False, db: Session = Depends(get_db)):
+def listar_tipos_falla(request: Request, solo_reporte_qr: bool = False, db: Session = Depends(get_db)):
     """Catalogo administrable de fallas (tabla `tipos_falla`). El formulario publico pide
     `solo_reporte_qr=true` para no mostrar fallas que solo puede detectar la IA
     (ej. MOVIMIENTO_ANOMALO); el panel de tecnicos ve el catalogo completo."""
+    if getattr(request.state, "usuario", None) is None:
+        solo_reporte_qr = True  # quien no inicio sesion solo ve lo que puede reportar por QR
     return crud_tipo_falla.list_tipos_falla(db, solo_reporte_qr=solo_reporte_qr)
 
 
@@ -90,7 +63,8 @@ def crear_incidencia_por_qr(request: Request, incidencia_in: IncidenciaCreateByQ
 
     Proteccion del endpoint publico: maximo 5 reportes cada 10 minutos por token QR + IP
     (y 30 por IP); al pasarse responde 429. Un equipo solo queda 'fuera_de_servicio' con 2
-    reportes "no funcional" abiertos en 24 h (ver crud.incidencia.create_incidencia_por_qr)."""
+    reportes "no funcional" abiertos en 24 h (ver crud.incidencia.create_incidencia_por_qr).
+    Una vez fuera de servicio, responde 409 y no acepta reportes hasta que el personal la habilite."""
     ip = request.client.host if request.client else "desconocida"
     if not limitador_qr_ip.permitir(ip) or not limitador_qr_token.permitir((incidencia_in.token, ip)):
         raise HTTPException(
@@ -101,6 +75,15 @@ def crear_incidencia_por_qr(request: Request, incidencia_in: IncidenciaCreateByQ
     equipo = crud_equipamiento.get_equipo_by_token(db, incidencia_in.token)
     if not equipo:
         raise HTTPException(status_code=404, detail="El codigo QR no es valido o ya no esta activo.")
+
+    # Una maquina fuera de servicio ya esta reportada y bloqueada: no se aceptan mas reportes
+    # hasta que el personal la habilite (cambie su estado desde el panel).
+    if equipo.estado == EstadoEquipo.fuera_de_servicio:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta maquina esta fuera de servicio y ya fue reportada. "
+            "No se reciben mas reportes hasta que el personal la habilite.",
+        )
 
     tipo_falla = crud_tipo_falla.get_tipo_falla_by_codigo(db, incidencia_in.tipo_falla_codigo)
     if not tipo_falla or not tipo_falla.permite_reporte_qr:

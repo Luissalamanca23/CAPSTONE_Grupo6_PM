@@ -48,5 +48,8 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:?Define FRONTEND_URL (origen del panel, para CORS) en el .env}
       VISION_PIN: ${VISION_PIN:?Define VISION_PIN (PIN para editar zonas y parametros de vision) en el .env}
       VISION_PIPELINE_KEY: ${VISION_PIPELINE_KEY:?Define VISION_PIPELINE_KEY (clave del pipeline de vision) en el .env}
+      # Secreto para firmar las sesiones del login; vacio = se genera y guarda en la base.
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
     volumes: !reset []
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

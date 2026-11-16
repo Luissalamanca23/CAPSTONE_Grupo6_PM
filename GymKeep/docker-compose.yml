@@ -13,7 +13,7 @@ services:
       - db_data:/var/lib/postgresql/data
       # El esquema completo (empresas/sucursales/zonas/equipos/QR/camaras/IA/incidencias/
       # mantenimientos/sesiones de uso/auditoria) y los datos de ejemplo se cargan solos la
-      # primera vez que se crea el volumen db_data. Ver GymKeep_BDD_Completa/README.md.
+      # primera vez que se crea el volumen db_data. Ver postgres/schema.sql y postgres/seed.sql.
       - ./postgres/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./postgres/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
       # Vistas legibles (v_equipos, v_incidencias...) para mirar los datos en Adminer.
@@ -112,7 +112,15 @@ services:
       S3_REGION: ${S3_REGION:-us-east-1}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       VISION_PIN: ${VISION_PIN:-}
-      VISION_PIPELINE_KEY: ${VISION_PIPELINE_KEY:-}
+      # Toda la API exige sesion (login con RUN). El pipeline de vision entra con esta clave
+      # (cabecera X-Pipeline-Key); debe ser la misma en el servicio `vision`. El valor por
+      # defecto sirve para uso local: si la API queda expuesta, define VISION_PIPELINE_KEY.
+      VISION_PIPELINE_KEY: ${VISION_PIPELINE_KEY:-gymkeep-pipeline-local}
+      # Secreto para firmar las sesiones. Vacio = se genera solo y se guarda en la base.
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      SESSION_HOURS: ${SESSION_HOURS:-24}
+      # Origenes extra del panel (separados por comas); localhost y Tailscale ya estan permitidos.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
     ports:
       - "8000:8000"
     volumes:
@@ -120,6 +128,48 @@ services:
     # El esquema ya lo crea Postgres con schema.sql (arriba), por eso ya no se ejecuta
     # app.init_db aqui: solo levanta la API.
     command: sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  # Respaldo automatico diario (RNF-21): un servicio por base. Esperan hasta RESPALDO_HORA_UTC
+  # (06:00 UTC = 03:00 en Chile en verano), guardan el respaldo en ./respaldos/auto y conservan
+  # los ultimos RESPALDO_RETENCION_DIAS dias. Si aun no hay ningun respaldo, hacen uno al arrancar.
+  # Usan las mismas imagenes que db y mongo (no descargan nada nuevo). Detalles y prueba de
+  # restauracion: respaldo/LEEME.md. Se pueden pedir a mano con respaldar-ahora.bat.
+  respaldo-postgres:
+    image: postgres:16-alpine
+    container_name: gymkeep_respaldo_pg
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-gymkeep}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-gymkeep_password}
+      PGDATABASE: ${POSTGRES_DB:-gymkeep}
+      HORA_UTC: ${RESPALDO_HORA_UTC:-06:00}
+      RETENCION_DIAS: ${RESPALDO_RETENCION_DIAS:-7}
+    volumes:
+      - ./respaldo:/scripts:ro
+      - ./respaldos/auto:/respaldos
+    # `tr -d '\r'` quita los saltos de linea de Windows por si el script los trae.
+    entrypoint: ["sh", "-c", "tr -d '\\r' < /scripts/respaldar.sh > /tmp/respaldar.sh && exec sh /tmp/respaldar.sh postgres"]
+
+  respaldo-mongo:
+    image: mongo:7
+    container_name: gymkeep_respaldo_mongo
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      MONGO_URL: mongodb://${MONGO_ROOT_USER:-gymkeep}:${MONGO_ROOT_PASSWORD:-gymkeep_mongo_password}@mongo:27017/?authSource=admin
+      MONGO_DB: ${MONGO_DB:-gymkeep_ai}
+      HORA_UTC: ${RESPALDO_HORA_UTC:-06:00}
+      RETENCION_DIAS: ${RESPALDO_RETENCION_DIAS:-7}
+    volumes:
+      - ./respaldo:/scripts:ro
+      - ./respaldos/auto:/respaldos
+    entrypoint: ["sh", "-c", "tr -d '\\r' < /scripts/respaldar.sh > /tmp/respaldar.sh && exec sh /tmp/respaldar.sh mongo"]
 
   # Visores de las bases de datos (solo para desarrollo). No arrancan con `docker compose up`:
   # se piden por nombre, y asi no pueden romper el arranque normal si una imagen no se descarga.

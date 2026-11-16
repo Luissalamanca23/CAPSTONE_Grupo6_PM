@@ -5,11 +5,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core import watchdog
+from app.core.arranque import asegurar_columnas, asegurar_tablas
+from app.core.cabeceras import CabecerasSeguridad
 from app.core.config import settings
+from app.core.origenes import ORIGEN_LOCAL_RE, origenes_permitidos
 
 
 @contextlib.asynccontextmanager
 async def lifespan(_: FastAPI):
+    asegurar_tablas()
+    asegurar_columnas()
     tarea = watchdog.iniciar()
     try:
         yield
@@ -20,21 +25,22 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title=settings.project_name, lifespan=lifespan)
 
-# El Portal de Reporte Express (formulario del QR) lo puede abrir cualquier persona,
-# desde cualquier red (celular por datos moviles, tunel publico, etc.), y esta API no
-# usa cookies/sesion (no hay login todavia) -- por eso se permite cualquier origen.
-# allow_credentials=False es lo que hace valido usar "*" segun la especificacion CORS.
+# La sesion va en una cookie HttpOnly, asi que CORS ya no puede ser "*": solo se aceptan los
+# origenes del panel (localhost, redes privadas y Tailscale, FRONTEND_URL y CORS_ORIGINS).
+# Normalmente el panel y la API comparten dominio y CORS ni se usa.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=origenes_permitidos(),
+    allow_origin_regex=ORIGEN_LOCAL_RE,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    # Sin esto el navegador recibe el header pero JS no puede leerlo (lo bloquea el CORS
-    # por defecto): el listado de incidencias lo usa para saber el total y armar la
-    # paginacion sin traer todos los registros de una vez.
-    expose_headers=["X-Total-Count"],
+    # Sin esto JS no puede leer estos headers: X-Total-Count arma la paginacion de incidencias
+    # y WWW-Authenticate distingue una sesion vencida de un PIN incorrecto.
+    expose_headers=["X-Total-Count", "WWW-Authenticate"],
 )
+
+app.add_middleware(CabecerasSeguridad)
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 

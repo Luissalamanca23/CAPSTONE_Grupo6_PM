@@ -151,3 +151,22 @@ def test_horometro_cuenta_la_union_de_intervalos(client, mongo, equipo_y_camara,
     assert fila["sesiones_cerradas"] == 2
     assert fila["horas_suma"] == pytest.approx(1.0)
     assert fila["horas_uso"] == pytest.approx(40 / 60, abs=1e-3)  # no 1 h: se solapan 20 min
+
+
+def test_horometro_con_desde_deja_fuera_las_sesiones_anteriores(client, mongo, equipo_y_camara):
+    equipo_id, camara_id = equipo_y_camara
+    # Dos sesiones cerradas en dias distintos: 30 min el 25-sep y 10 min el 26-sep.
+    for dia, ini, fin in [("25", "18:00", "18:30"), ("26", "18:00", "18:10")]:
+        client.post("/api/v1/eventos-ia/", json=evento("inicio_uso", f"2026-09-{dia}T{ini}:00-03:00", equipo_id, camara_id))
+        client.post("/api/v1/eventos-ia/", json=evento("fin_uso", f"2026-09-{dia}T{fin}:00-03:00", equipo_id, camara_id))
+
+    todas = client.get("/api/v1/sesiones-uso/horometro", params={"equipo_id": equipo_id}).json()[0]
+    assert todas["sesiones_cerradas"] == 2
+    assert todas["horas_suma"] == pytest.approx(40 / 60, abs=1e-3)
+
+    desde = client.get(
+        "/api/v1/sesiones-uso/horometro", params={"equipo_id": equipo_id, "desde": "2026-09-26T00:00:00-03:00"}
+    ).json()[0]
+    assert desde["sesiones_cerradas"] == 1
+    assert desde["horas_suma"] == pytest.approx(10 / 60, abs=1e-3)
+    assert desde["ultima_sesion"] is not None

@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     # Cada cuantos segundos la API revisa y cierra sesiones de uso huerfanas (0 = desactivado).
     vision_watchdog_s: int = 60
 
+    # Inicio de sesion del panel (RUN + clave numerica). Ver app/core/auth.py.
+    # Secreto con que se firman las sesiones. Vacio = se genera una vez y queda en la base.
+    auth_secret: str = ""
+    # Duracion de la sesion, en horas.
+    session_hours: float = 24
+    # Origenes extra permitidos por CORS, separados por comas (ademas de FRONTEND_URL, localhost
+    # y redes privadas). Solo hace falta si el panel y la API estan en dominios distintos.
+    cors_origins: str = ""
+    # Para las pruebas: no crear/verificar tablas al arrancar (no tocar la base real).
+    skip_db_init: bool = False
+
     @field_validator("vision_pin")
     @classmethod
     def _pin_valido(cls, valor: str) -> str:

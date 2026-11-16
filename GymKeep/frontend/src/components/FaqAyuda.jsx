@@ -34,6 +34,16 @@ const PREGUNTAS = [
     respuesta:
       'Entra al detalle del equipo (o usa el atajo "Resolver" desde el listado de Equipamiento) y presiona "Registrar mantenimiento". Ahí aparecen todas sus incidencias abiertas, ya preseleccionadas: solo desmarca las que no correspondan y guarda.',
   },
+  {
+    pregunta: '¿Qué puede hacer un técnico y qué un administrador?',
+    respuesta:
+      'Los dos usan el panel completo: revisan incidencias, cambian estados, registran mantenimientos, editan equipos y administran las cámaras. Solo el administrador puede eliminar datos (equipos, incidencias, sucursales, cámaras) y ver el menú Usuarios, donde crea cuentas, cambia roles y restablece claves.',
+  },
+  {
+    pregunta: 'Olvidé mi clave o quiero cambiarla',
+    respuesta:
+      'Para cambiarla, usa "Cambiar mi clave" al final del menú lateral (necesitas la actual). Si la olvidaste, pídele a un administrador que la restablezca desde Usuarios. Tras 5 intentos fallidos la cuenta se bloquea 15 minutos.',
+  },
 ]
 
 export default function FaqAyuda() {

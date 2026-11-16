@@ -38,7 +38,7 @@ async function conPin(path, options) {
       if (pin) recordarPin(pin)
       return resultado
     } catch (err) {
-      if (err.status !== 401 && err.status !== 429) throw err
+      if (err.sesion || (err.status !== 401 && err.status !== 429)) throw err // sesion vencida: no es un PIN
       recordarPin(null)
       pin = await pedirPin((pin || err.status === 429) ? err.message : null) // primera vez: sin mensaje de error
       if (!pin) throw new ErrorApi('Edición cancelada: se requiere el PIN.', 401)

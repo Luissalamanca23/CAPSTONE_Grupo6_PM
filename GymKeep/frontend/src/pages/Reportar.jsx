@@ -36,6 +36,21 @@ export default function Reportar() {
   const [errorEnvio, setErrorEnvio] = useState(null)
   const [enviado, setEnviado] = useState(null) // guarda la respuesta del servidor al enviar
 
+  // Pagina publica (la abre cualquiera desde el QR): titulo propio y sin indexar en buscadores.
+  // No tiene enlaces al panel ni da acceso a el: para eso hay que iniciar sesion en /login.
+  useEffect(() => {
+    const tituloAnterior = document.title
+    document.title = 'Reportar una falla · GymKeep'
+    const meta = document.createElement('meta')
+    meta.name = 'robots'
+    meta.content = 'noindex, nofollow'
+    document.head.appendChild(meta)
+    return () => {
+      document.title = tituloAnterior
+      meta.remove()
+    }
+  }, [])
+
   useEffect(() => {
     // solo_reporte_qr=true: no muestra fallas que solo puede detectar la IA
     // (ej. movimiento anómalo), esas no tienen sentido en una encuesta manual.
@@ -137,7 +152,7 @@ export default function Reportar() {
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
           <div className="bg-black rounded-xl py-4">
-            <img src="/logo.png" alt="GymKeep" className="mx-auto w-40 h-auto" />
+            <img src="/logo.png" alt="GymKeep" width="416" height="340" className="mx-auto w-40 h-auto" />
           </div>
           <p className="text-sm text-slate-500 mt-3">Reporte de falla de equipamiento</p>
         </div>
@@ -150,6 +165,16 @@ export default function Reportar() {
               <p className="text-red-600 font-medium">Código QR no válido</p>
               <p className="text-sm text-slate-500">
                 No encontramos una máquina activa con este código. Pide ayuda al personal del gimnasio.
+              </p>
+            </div>
+          )}
+
+          {!cargando && !errorCarga && !enviado && equipo.estado === 'fuera_de_servicio' && (
+            <div className="text-center space-y-2 py-4">
+              <p className="text-red-600 font-semibold text-lg">Máquina fuera de servicio</p>
+              <p className="text-sm text-slate-500">
+                <strong>{equipo.nombre}</strong> ya fue reportada y está fuera de servicio. No se reciben más
+                reportes hasta que el personal la habilite de nuevo.
               </p>
             </div>
           )}
@@ -172,7 +197,7 @@ export default function Reportar() {
             </div>
           )}
 
-          {!cargando && !errorCarga && !enviado && (
+          {!cargando && !errorCarga && !enviado && equipo.estado !== 'fuera_de_servicio' && (
             <form onSubmit={manejarEnvio} className="space-y-6">
               <div className="text-center">
                 <p className="text-sm text-slate-500">Estás reportando una falla en:</p>

@@ -1,17 +1,41 @@
 export const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
 // Error de la API con el codigo HTTP (el flujo del PIN del modulo de vision depende de .status).
+// `sesion` es true cuando el 401 significa "no hay sesion iniciada o vencio" (y no un PIN malo).
 export class ErrorApi extends Error {
-  constructor(mensaje, status) {
+  constructor(mensaje, status, sesion = false) {
     super(mensaje)
     this.status = status
+    this.sesion = sesion
   }
 }
 
-// Peticion JSON compartida por todas las pantallas. Los cuerpos Blob (subida de imagenes)
-// no llevan Content-Type JSON; las cabeceras de options se suman a las base.
-export async function request(path, options = {}) {
+// El contexto de sesion (auth/AuthContext.jsx) se registra aqui para enterarse cuando cualquier
+// peticion descubre que la sesion vencio, y asi llevar a la persona al login.
+let alExpirarSesion = null
+export function registrarAlExpirarSesion(funcion) {
+  alExpirarSesion = funcion
+  return () => {
+    if (alExpirarSesion === funcion) alExpirarSesion = null
+  }
+}
+
+async function errorDe(respuesta, sesion) {
+  let detalle = respuesta.statusText
+  try {
+    const cuerpo = await respuesta.json()
+    if (cuerpo.detail) detalle = typeof cuerpo.detail === 'string' ? cuerpo.detail : JSON.stringify(cuerpo.detail)
+  } catch {
+    // el cuerpo no era JSON, se mantiene el statusText
+  }
+  return new ErrorApi(detalle, respuesta.status, sesion)
+}
+
+// fetch a la API con la cookie de sesion. Los cuerpos Blob (subida de imagenes) no llevan
+// Content-Type JSON; las cabeceras de options se suman a las base. Devuelve la Response si fue ok.
+export async function fetchApi(path, options = {}) {
   const respuesta = await fetch(`${BASE_URL}${path}`, {
+    credentials: 'include',
     ...options,
     headers: {
       ...(options.body instanceof Blob ? {} : { 'Content-Type': 'application/json' }),
@@ -20,23 +44,48 @@ export async function request(path, options = {}) {
   })
 
   if (!respuesta.ok) {
-    let detalle = respuesta.statusText
-    try {
-      const cuerpo = await respuesta.json()
-      if (cuerpo.detail) detalle = typeof cuerpo.detail === 'string' ? cuerpo.detail : JSON.stringify(cuerpo.detail)
-    } catch {
-      // el cuerpo no era JSON, se mantiene el statusText
-    }
-    throw new ErrorApi(detalle, respuesta.status)
+    // La API marca "sin sesion" con WWW-Authenticate: GymKeep-Sesion (un PIN malo no la lleva).
+    const sesion = respuesta.status === 401 && respuesta.headers.get('WWW-Authenticate') === 'GymKeep-Sesion'
+    // Un RUN o clave incorrectos al iniciar sesion tambien llegan asi, pero no es una sesion vencida.
+    if (sesion && !path.startsWith('/auth/login') && alExpirarSesion) alExpirarSesion()
+    throw await errorDe(respuesta, sesion)
   }
+  return respuesta
+}
 
+// Peticion JSON compartida por todas las pantallas.
+export async function request(path, options = {}) {
+  const respuesta = await fetchApi(path, options)
   if (respuesta.status === 204) return null
   return respuesta.json()
 }
 
 export const api = {
+  // Sesion (RUN + clave numerica). Ver app/api/v1/auth.py.
+  estadoAuth: () => request('/auth/estado'),
+  login: (run, clave) => request('/auth/login', { method: 'POST', body: JSON.stringify({ run, clave }) }),
+  logout: () => request('/auth/logout', { method: 'POST' }),
+  yo: () => request('/auth/me'),
+  cambiarClave: (claveActual, claveNueva) =>
+    request('/auth/cambiar-clave', { method: 'POST', body: JSON.stringify({ clave_actual: claveActual, clave_nueva: claveNueva }) }),
+  // Cuentas (solo administradores)
+  listarUsuarios: () => request('/auth/usuarios'),
+  crearUsuario: (datos) => request('/auth/usuarios', { method: 'POST', body: JSON.stringify(datos) }),
+  actualizarUsuario: (id, datos) => request(`/auth/usuarios/${id}`, { method: 'PATCH', body: JSON.stringify(datos) }),
+
   // Conteos agregados (SQL) para el panel de gestion; no dependen de listas truncadas.
   obtenerEstadisticas: () => request('/estadisticas/'),
+
+  // Informes de funcionamiento de las maquinas (mensual / trimestral / anual).
+  // El borrador se arma en el servidor; despues se edita en pantalla y se baja como Excel.
+  borradorInforme: (params = {}) => {
+    const query = new URLSearchParams(params).toString()
+    return request(`/informes/borrador${query ? `?${query}` : ''}`)
+  },
+  descargarInformeExcel: async (informe) => {
+    const respuesta = await fetchApi('/informes/excel', { method: 'POST', body: JSON.stringify(informe) })
+    return respuesta.blob()
+  },
   // Empresas / sucursales / zonas: jerarquia obligatoria para registrar equipamiento
   // (ver GymKeep_BDD_Completa). Para el Capstone normalmente hay una sola empresa/sucursal,
   // creada por la data de ejemplo (postgres/seed.sql).
@@ -63,7 +112,22 @@ export const api = {
     const query = params.toString() ? `?${params.toString()}` : ''
     return request(`/equipamiento/${query}`)
   },
+  // Todos los equipos: la API entrega a lo mas 500 por llamada (por defecto 100), asi que se
+  // piden por tandas hasta traerlos todos. Sin esto el listado quedaba cortado en 100 equipos.
+  listarTodosLosEquipos: async (sucursalId) => {
+    const POR_LLAMADA = 500
+    const todos = []
+    for (let tanda = 0; tanda < 40; tanda += 1) {
+      const lote = await api.listarEquipos(sucursalId, { skip: tanda * POR_LLAMADA, limit: POR_LLAMADA })
+      todos.push(...lote)
+      if (lote.length < POR_LLAMADA) break
+    }
+    return todos
+  },
   obtenerEquipo: (id) => request(`/equipamiento/${id}`),
+  // Costo total de propiedad (RF-32): precio de compra + mantenciones. Uno por equipo o todos.
+  obtenerTcoEquipo: (id) => request(`/equipamiento/${id}/tco`),
+  listarTco: (sucursalId) => request(`/equipamiento/tco${sucursalId ? `?sucursal_id=${sucursalId}` : ''}`),
   obtenerEquipoPorQr: (token) => request(`/equipamiento/qr/${token}`),
   crearEquipo: (datos) => request('/equipamiento/', { method: 'POST', body: JSON.stringify(datos) }),
   actualizarEquipo: (id, datos) =>
@@ -97,17 +161,7 @@ export const api = {
   listarIncidenciasPaginado: async (filtros = {}) => {
     const params = new URLSearchParams(filtros)
     const query = params.toString() ? `?${params.toString()}` : ''
-    const respuesta = await fetch(`${BASE_URL}/incidencias/${query}`)
-    if (!respuesta.ok) {
-      let detalle = respuesta.statusText
-      try {
-        const cuerpo = await respuesta.json()
-        detalle = cuerpo.detail || detalle
-      } catch {
-        // el cuerpo no era JSON, se mantiene el statusText
-      }
-      throw new Error(detalle)
-    }
+    const respuesta = await fetchApi(`/incidencias/${query}`)
     const items = await respuesta.json()
     const total = Number(respuesta.headers.get('X-Total-Count') ?? items.length)
     return { items, total }
