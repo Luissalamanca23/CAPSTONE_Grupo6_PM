@@ -7,6 +7,7 @@ import EquipoDetalle from './pages/EquipoDetalle.jsx'
 import Equipos from './pages/Equipos.jsx'
 import NoEncontrado from './components/NoEncontrado.jsx'
 import Incidencias from './pages/Incidencias.jsx'
+import Informes from './pages/Informes.jsx'
 import Login from './pages/Login.jsx'
 import Reportar from './pages/Reportar.jsx'
 import Sucursales from './pages/Sucursales.jsx'
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/equipos/:id" element={<EquipoDetalle />} />
           <Route path="/incidencias" element={<Incidencias />} />
           <Route path="/costos" element={<Costos />} />
+          <Route path="/informes" element={<Informes />} />
           <Route path="/sucursales" element={<Sucursales />} />
           {/* Modulo de vision (ver vision/INTEGRACION.md) */}
           <Route path="/uso" element={<UsoMaquinas />} />

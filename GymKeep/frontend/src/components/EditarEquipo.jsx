@@ -18,13 +18,15 @@ function aFormulario(equipo) {
     fecha_adquisicion: equipo.fecha_adquisicion ?? '',
     fecha_instalacion: equipo.fecha_instalacion ?? '',
     vida_util_meses: equipo.vida_util_meses ? String(equipo.vida_util_meses) : '',
+    costo_adquisicion:
+      equipo.costo_adquisicion === null || equipo.costo_adquisicion === undefined ? '' : String(equipo.costo_adquisicion),
     observaciones: equipo.observaciones ?? '',
   }
 }
 
 // Convierte el valor del formulario al que entiende la API ('' -> null, numeros como numero).
 function aApi(campo, valor) {
-  if (campo === 'zona_id' || campo === 'vida_util_meses') return valor === '' ? null : Number(valor)
+  if (campo === 'zona_id' || campo === 'vida_util_meses' || campo === 'costo_adquisicion') return valor === '' ? null : Number(valor)
   if (valor === '') return null
   return typeof valor === 'string' ? valor.trim() : valor
 }
@@ -183,6 +185,17 @@ export default function EditarEquipo({
 
               <Campo etiqueta="Vida útil (meses)">
                 <input type="number" min="1" value={form.vida_util_meses} onChange={cambiar('vida_util_meses')} className={CAMPO} />
+              </Campo>
+              <Campo etiqueta="Costo de compra (CLP)">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.costo_adquisicion}
+                  onChange={cambiar('costo_adquisicion')}
+                  placeholder="Ej. 1200000"
+                  className={CAMPO}
+                />
               </Campo>
               <Campo etiqueta="Observaciones" className="sm:col-span-2">
                 <textarea rows={2} value={form.observaciones} onChange={cambiar('observaciones')} className={CAMPO} />

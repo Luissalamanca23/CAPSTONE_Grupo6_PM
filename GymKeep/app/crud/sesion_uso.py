@@ -41,21 +41,26 @@ def horometro(db: Session, equipo_id: Optional[int] = None, desde: Optional[date
     """Horas de uso por equipo a partir de las sesiones cerradas (§6.6.4 del estudio).
     `desde` permite medir, por ejemplo, las horas desde el ultimo mantenimiento."""
     equipos = db.query(Equipo).filter(Equipo.estado != EstadoEquipo.retirado)
-    sesiones = db.query(SesionUso).filter(SesionUso.estado == "cerrada", SesionUso.fecha_fin.isnot(None))
+    # Solo las cuatro columnas que hacen falta, sin armar un objeto SesionUso por fila: con el
+    # historial de la demostracion (miles de sesiones) eso es lo que mas tardaba (RNF-02).
+    sesiones = db.query(
+        SesionUso.equipo_id, SesionUso.fecha_inicio, SesionUso.fecha_fin, SesionUso.duracion_segundos
+    ).filter(SesionUso.estado == "cerrada", SesionUso.fecha_fin.isnot(None))
     if equipo_id is not None:
         equipos = equipos.filter(Equipo.id == equipo_id)
         sesiones = sesiones.filter(SesionUso.equipo_id == equipo_id)
     if desde is not None:
         sesiones = sesiones.filter(SesionUso.fecha_inicio >= desde)
 
-    por_equipo: dict[int, list[SesionUso]] = {}
-    for sesion in sesiones.all():
-        por_equipo.setdefault(sesion.equipo_id, []).append(sesion)
+    # equipo_id -> [(inicio, fin, duracion_segundos), ...]
+    por_equipo: dict[int, list[tuple]] = {}
+    for equipo_sesion, inicio, fin, duracion in sesiones.all():
+        por_equipo.setdefault(equipo_sesion, []).append((inicio, fin, duracion))
 
     resultado = []
     for equipo in equipos.order_by(Equipo.id).all():
         propias = por_equipo.get(equipo.id, [])
-        intervalos = [(s.fecha_inicio, s.fecha_fin) for s in propias]
+        intervalos = [(ini, fin) for ini, fin, _ in propias]
         resultado.append(
             {
                 "equipo_id": equipo.id,
@@ -63,8 +68,8 @@ def horometro(db: Session, equipo_id: Optional[int] = None, desde: Optional[date
                 "nombre": equipo.nombre,
                 "sesiones_cerradas": len(propias),
                 "horas_uso": round(_segundos_union(intervalos) / 3600, 4),
-                "horas_suma": round(sum((s.duracion_segundos or 0) for s in propias) / 3600, 4),
-                "ultima_sesion": max((s.fecha_fin for s in propias), default=None),
+                "horas_suma": round(sum((dur or 0) for _, _, dur in propias) / 3600, 4),
+                "ultima_sesion": max((fin for _, fin, _ in propias), default=None),
             }
         )
     return resultado

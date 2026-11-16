@@ -38,7 +38,7 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Mismo catalogo semilla que postgres/schema.sql (ver GymKeep_BDD_Completa), para que los
+# Mismo catalogo semilla que postgres/schema.sql, para que los
 # tests no dependan de una base PostgreSQL real.
 CATALOGO_TIPOS_FALLA = [
     dict(

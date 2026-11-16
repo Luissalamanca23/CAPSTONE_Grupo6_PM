@@ -14,6 +14,7 @@ import ConfirmarEliminar from '../components/ConfirmarEliminar.jsx'
 import { formatearFechaHora, formatearMonto } from '../utils/formato.js'
 import { usePaginacion } from '../utils/paginacion.js'
 import { getSaludEquipo } from '../utils/saludEquipo.js'
+import { calcularTcoEquipo } from '../utils/tco.js'
 
 const ESTADOS_ABIERTOS = ['pendiente', 'en_proceso']
 
@@ -113,6 +114,9 @@ export default function EquipoDetalle() {
     () => mantenimientos.filter((m) => m.costo_total !== null && m.costo_total !== undefined).length,
     [mantenimientos]
   )
+
+  // Costo total de propiedad (RF-32): precio de compra + todas las mantenciones.
+  const tco = useMemo(() => calcularTcoEquipo(equipo, mantenimientos), [equipo, mantenimientos])
 
   async function regenerarQr() {
     setRegenerando(true)
@@ -488,6 +492,40 @@ export default function EquipoDetalle() {
             </table>
             </div>
             <Paginacion paginacion={paginacionIncidencias} />
+          </div>
+
+          <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-semibold text-slate-800">Costo total de propiedad (TCO)</h2>
+                <p className="text-xs text-slate-500">Costo de compra + mantenciones (repuestos y mano de obra).</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[11px] uppercase tracking-wide text-slate-400">TCO</p>
+                <p className="text-2xl font-bold text-slate-900">{formatearMonto(tco.tco)}</p>
+              </div>
+            </div>
+            <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+              <div>
+                <dt className="text-xs text-slate-400">Costo de compra</dt>
+                <dd className="font-semibold text-slate-800">
+                  {tco.adquisicionRegistrada ? formatearMonto(tco.costoAdquisicion) : 'Sin registrar'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-400">Mantenciones correctivas</dt>
+                <dd className="font-semibold text-slate-800">{formatearMonto(tco.costoCorrectivo)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-400">Mantenciones preventivas</dt>
+                <dd className="font-semibold text-slate-800">{formatearMonto(tco.costoPreventivo)}</dd>
+              </div>
+            </dl>
+            {!tco.adquisicionRegistrada && (
+              <p className="mt-3 text-xs text-amber-700">
+                Falta el costo de compra: por ahora el TCO solo suma mantenciones. Se agrega con «Editar datos».
+              </p>
+            )}
           </div>
 
           <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">

@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { api } from '../../api/client.js'
 import { visionApi } from '../../api/vision.js'
 import ConfirmarEliminar from '../../components/ConfirmarEliminar.jsx'
+import Paginacion from '../../components/Paginacion.jsx'
+import { usePaginacion } from '../../utils/paginacion.js'
 import { haceCuanto } from './uso.js'
 import usePolling from './usePolling.js'
 
@@ -171,6 +173,8 @@ export default function Camaras() {
 
   usePolling(cargar, 5000)
 
+  const paginacion = usePaginacion(camaras || [], 6)
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
@@ -195,7 +199,7 @@ export default function Camaras() {
       {camaras && camaras.length === 0 && <p className="text-sm text-slate-500">Todavía no hay cámaras registradas.</p>}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-        {(camaras || []).map((c) => (
+        {paginacion.visibles.map((c) => (
           <div key={c.id} className="relative">
             <TarjetaCamara camara={c} marca={marca} />
             <div className="absolute top-2 right-2">
@@ -211,6 +215,9 @@ export default function Camaras() {
             </div>
           </div>
         ))}
+      </div>
+      <div className="rounded-lg border border-slate-200 bg-white empty:hidden">
+        <Paginacion paginacion={paginacion} />
       </div>
     </div>
   )

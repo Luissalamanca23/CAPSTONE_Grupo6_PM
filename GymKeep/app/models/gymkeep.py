@@ -196,6 +196,8 @@ class Equipo(Base):
     fecha_adquisicion = Column(Date)
     fecha_instalacion = Column(Date)
     vida_util_meses = Column(Integer)
+    # Precio de compra del equipo (CLP). Con los costos de sus mantenciones forma el TCO (RF-32).
+    costo_adquisicion = Column(Numeric(14, 2))
     estado = Column(Enum(EstadoEquipo, name="estado_equipo"), nullable=False, default=EstadoEquipo.operativo)
     observaciones = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

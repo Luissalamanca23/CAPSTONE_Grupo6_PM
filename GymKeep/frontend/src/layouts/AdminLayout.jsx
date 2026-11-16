@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import CambiarClaveDialogo from '../auth/CambiarClaveDialogo.jsx'
 import { useAuth } from '../auth/AuthContext.jsx'
+import AlertasGraves from '../components/AlertasGraves.jsx'
 import FaqAyuda from '../components/FaqAyuda.jsx'
 
 const ICONOS = {
@@ -32,6 +33,13 @@ const ICONOS = {
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7v10" />
       <path d="M14.8 9.5c0-1.1-1.25-2-2.8-2s-2.8.9-2.8 2c0 1.1 1.25 1.5 2.8 2s2.8.9 2.8 2c0 1.1-1.25 2-2.8 2s-2.8-.9-2.8-2" />
+    </svg>
+  ),
+  informes: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5 shrink-0">
+      <path d="M6 3h8l4 4v14H6z" strokeLinejoin="round" />
+      <path d="M14 3v4h4" strokeLinejoin="round" />
+      <path d="M9 12h6M9 15h6M9 18h4" strokeLinecap="round" />
     </svg>
   ),
   uso: (
@@ -81,6 +89,7 @@ const ENLACES = [
   { to: '/equipos', label: 'Equipamiento', icono: ICONOS.equipos },
   { to: '/incidencias', label: 'Incidencias', icono: ICONOS.incidencias },
   { to: '/costos', label: 'Costos', icono: ICONOS.costos },
+  { to: '/informes', label: 'Informes', icono: ICONOS.informes },
   { to: '/uso', label: 'Uso de máquinas', icono: ICONOS.uso },
   { to: '/camaras', label: 'Cámaras', icono: ICONOS.camaras },
   { to: '/sucursales', label: 'Sucursales', icono: ICONOS.sucursales },
@@ -303,6 +312,7 @@ export default function AdminLayout() {
         <Outlet />
       </main>
 
+      <AlertasGraves />
       <FaqAyuda />
       {cambiandoClave && <CambiarClaveDialogo onCerrar={() => setCambiandoClave(false)} />}
     </div>

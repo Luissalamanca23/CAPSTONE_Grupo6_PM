@@ -10,3 +10,5 @@ qrcode[pil]==7.4.2
 Pillow==10.4.0
 pymongo==4.10.1
 boto3==1.35.36
+openpyxl==3.1.5
+tzdata>=2024.1

@@ -109,7 +109,7 @@ Paso 'Esperando a que responda'
 $listo = $false
 for ($i = 0; $i -lt 90; $i++) {
     try {
-        $r = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Puerto/api/v1/equipamiento/?limit=1" -TimeoutSec 3
+        $r = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Puerto/api/v1/auth/estado" -TimeoutSec 3
         if ($r.StatusCode -eq 200) { $listo = $true; break }
     } catch { }
     Start-Sleep -Seconds 2

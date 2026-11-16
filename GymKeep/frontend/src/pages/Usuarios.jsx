@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api/client.js'
 import { useAuth } from '../auth/AuthContext.jsx'
+import Paginacion from '../components/Paginacion.jsx'
+import { usePaginacion } from '../utils/paginacion.js'
 import { formatearFechaHora } from '../utils/formato.js'
 import { formatearRun, runCanonico } from '../utils/run.js'
 
@@ -19,6 +21,7 @@ export default function Usuarios() {
   const [form, setForm] = useState(INICIAL)
   const [guardando, setGuardando] = useState(false)
   const [restableciendo, setRestableciendo] = useState(null) // { id, clave }
+  const paginacion = usePaginacion(lista, 10)
 
   function cargar() {
     return api
@@ -140,7 +143,7 @@ export default function Usuarios() {
                 </td>
               </tr>
             )}
-            {lista.map((c) => {
+            {paginacion.visibles.map((c) => {
               const esYo = c.id === yo?.id
               return (
                 <tr key={c.id} className="border-b border-slate-50 align-top">
@@ -216,6 +219,7 @@ export default function Usuarios() {
             })}
           </tbody>
         </table>
+        <Paginacion paginacion={paginacion} />
       </div>
       <p className="text-xs text-slate-400">Tu propia clave se cambia desde el menú, en “Cambiar mi clave”.</p>
     </div>

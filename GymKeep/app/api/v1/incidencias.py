@@ -11,7 +11,7 @@ from app.crud import incidencia as crud_incidencia
 from app.crud import tipo_falla as crud_tipo_falla
 from app.services import eliminacion, fotos_incidencias
 from app.services.vision_service import ImagenInvalida
-from app.models.gymkeep import EstadoIncidencia, PrioridadIncidencia
+from app.models.gymkeep import EstadoEquipo, EstadoIncidencia, PrioridadIncidencia
 from app.schemas.incidencia import (
     IncidenciaCreate,
     IncidenciaCreateByQR,
@@ -63,7 +63,8 @@ def crear_incidencia_por_qr(request: Request, incidencia_in: IncidenciaCreateByQ
 
     Proteccion del endpoint publico: maximo 5 reportes cada 10 minutos por token QR + IP
     (y 30 por IP); al pasarse responde 429. Un equipo solo queda 'fuera_de_servicio' con 2
-    reportes "no funcional" abiertos en 24 h (ver crud.incidencia.create_incidencia_por_qr)."""
+    reportes "no funcional" abiertos en 24 h (ver crud.incidencia.create_incidencia_por_qr).
+    Una vez fuera de servicio, responde 409 y no acepta reportes hasta que el personal la habilite."""
     ip = request.client.host if request.client else "desconocida"
     if not limitador_qr_ip.permitir(ip) or not limitador_qr_token.permitir((incidencia_in.token, ip)):
         raise HTTPException(
@@ -74,6 +75,15 @@ def crear_incidencia_por_qr(request: Request, incidencia_in: IncidenciaCreateByQ
     equipo = crud_equipamiento.get_equipo_by_token(db, incidencia_in.token)
     if not equipo:
         raise HTTPException(status_code=404, detail="El codigo QR no es valido o ya no esta activo.")
+
+    # Una maquina fuera de servicio ya esta reportada y bloqueada: no se aceptan mas reportes
+    # hasta que el personal la habilite (cambie su estado desde el panel).
+    if equipo.estado == EstadoEquipo.fuera_de_servicio:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta maquina esta fuera de servicio y ya fue reportada. "
+            "No se reciben mas reportes hasta que el personal la habilite.",
+        )
 
     tipo_falla = crud_tipo_falla.get_tipo_falla_by_codigo(db, incidencia_in.tipo_falla_codigo)
     if not tipo_falla or not tipo_falla.permite_reporte_qr:

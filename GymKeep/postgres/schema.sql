@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS equipos (
     fecha_adquisicion DATE,
     fecha_instalacion DATE,
     vida_util_meses INTEGER CHECK (vida_util_meses IS NULL OR vida_util_meses > 0),
+    costo_adquisicion NUMERIC(14, 2) CHECK (costo_adquisicion IS NULL OR costo_adquisicion >= 0),
     estado estado_equipo NOT NULL DEFAULT 'operativo',
     observaciones TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

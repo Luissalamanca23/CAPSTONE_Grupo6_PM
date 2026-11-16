@@ -29,7 +29,7 @@ export default function Costos() {
   const [busqueda, setBusqueda] = useState('')
 
   useEffect(() => {
-    api.listarEquipos().catch((err) => setError(err.message)).then((datos) => datos && setEquipos(datos))
+    api.listarTodosLosEquipos().catch((err) => setError(err.message)).then((datos) => datos && setEquipos(datos))
   }, [])
 
   // Debounce de la busqueda de texto para no pegarle a la API en cada tecla.

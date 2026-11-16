@@ -8,6 +8,7 @@ from app.api.v1 import (
     estadisticas,
     eventos_ia,
     incidencias,
+    informes,
     mantenimientos,
     modelos_ia,
     sesiones_uso,
@@ -32,3 +33,4 @@ api_router.include_router(eventos_ia.router, prefix="/eventos-ia", tags=["Evento
 api_router.include_router(sesiones_uso.router, prefix="/sesiones-uso", tags=["Sesiones de uso"])
 api_router.include_router(vision.router, prefix="/vision", tags=["Vision (integracion)"])
 api_router.include_router(estadisticas.router, prefix="/estadisticas", tags=["Estadisticas"])
+api_router.include_router(informes.router, prefix="/informes", tags=["Informes"])

@@ -5,7 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core import watchdog
-from app.core.arranque import asegurar_tablas
+from app.core.arranque import asegurar_columnas, asegurar_tablas
+from app.core.cabeceras import CabecerasSeguridad
 from app.core.config import settings
 from app.core.origenes import ORIGEN_LOCAL_RE, origenes_permitidos
 
@@ -13,6 +14,7 @@ from app.core.origenes import ORIGEN_LOCAL_RE, origenes_permitidos
 @contextlib.asynccontextmanager
 async def lifespan(_: FastAPI):
     asegurar_tablas()
+    asegurar_columnas()
     tarea = watchdog.iniciar()
     try:
         yield
@@ -37,6 +39,8 @@ app.add_middleware(
     # y WWW-Authenticate distingue una sesion vencida de un PIN incorrecto.
     expose_headers=["X-Total-Count", "WWW-Authenticate"],
 )
+
+app.add_middleware(CabecerasSeguridad)
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 

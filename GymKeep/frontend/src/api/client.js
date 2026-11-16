@@ -75,6 +75,17 @@ export const api = {
 
   // Conteos agregados (SQL) para el panel de gestion; no dependen de listas truncadas.
   obtenerEstadisticas: () => request('/estadisticas/'),
+
+  // Informes de funcionamiento de las maquinas (mensual / trimestral / anual).
+  // El borrador se arma en el servidor; despues se edita en pantalla y se baja como Excel.
+  borradorInforme: (params = {}) => {
+    const query = new URLSearchParams(params).toString()
+    return request(`/informes/borrador${query ? `?${query}` : ''}`)
+  },
+  descargarInformeExcel: async (informe) => {
+    const respuesta = await fetchApi('/informes/excel', { method: 'POST', body: JSON.stringify(informe) })
+    return respuesta.blob()
+  },
   // Empresas / sucursales / zonas: jerarquia obligatoria para registrar equipamiento
   // (ver GymKeep_BDD_Completa). Para el Capstone normalmente hay una sola empresa/sucursal,
   // creada por la data de ejemplo (postgres/seed.sql).
@@ -101,7 +112,22 @@ export const api = {
     const query = params.toString() ? `?${params.toString()}` : ''
     return request(`/equipamiento/${query}`)
   },
+  // Todos los equipos: la API entrega a lo mas 500 por llamada (por defecto 100), asi que se
+  // piden por tandas hasta traerlos todos. Sin esto el listado quedaba cortado en 100 equipos.
+  listarTodosLosEquipos: async (sucursalId) => {
+    const POR_LLAMADA = 500
+    const todos = []
+    for (let tanda = 0; tanda < 40; tanda += 1) {
+      const lote = await api.listarEquipos(sucursalId, { skip: tanda * POR_LLAMADA, limit: POR_LLAMADA })
+      todos.push(...lote)
+      if (lote.length < POR_LLAMADA) break
+    }
+    return todos
+  },
   obtenerEquipo: (id) => request(`/equipamiento/${id}`),
+  // Costo total de propiedad (RF-32): precio de compra + mantenciones. Uno por equipo o todos.
+  obtenerTcoEquipo: (id) => request(`/equipamiento/${id}/tco`),
+  listarTco: (sucursalId) => request(`/equipamiento/tco${sucursalId ? `?sucursal_id=${sucursalId}` : ''}`),
   obtenerEquipoPorQr: (token) => request(`/equipamiento/qr/${token}`),
   crearEquipo: (datos) => request('/equipamiento/', { method: 'POST', body: JSON.stringify(datos) }),
   actualizarEquipo: (id, datos) =>

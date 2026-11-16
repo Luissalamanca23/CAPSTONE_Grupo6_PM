@@ -258,7 +258,7 @@ def test_el_formulario_publico_del_qr_funciona_sin_sesion(client_anonimo, db_ses
     assert client_anonimo.post(f"{API}/incidencias/reporte-qr", json={}).status_code == 422
 
 
-def test_sin_sesion_el_catalogo_de_fallas_solo_muestra_las_del_reporte_por_qr(client_anonimo, client_tecnico):
+def test_sin_sesion_el_catalogo_de_fallas_solo_muestra_las_del_reporte_por_qr(client_anonimo):
     anonimo = client_anonimo.get(f"{API}/incidencias/tipos-falla", params={"solo_reporte_qr": "false"})
     codigos = {t["codigo"] for t in anonimo.json()}
     assert "OTRO" in codigos and "MOVIMIENTO_ANOMALO" not in codigos
@@ -325,6 +325,10 @@ def test_cors_permite_credenciales_solo_a_origenes_de_confianza(client_anonimo):
 
 
 def test_el_pipeline_entra_con_su_clave_pero_no_borra_ni_administra(client_anonimo, monkeypatch):
+    from app.services import vision_service
+
+    # Sin esto el listado de camaras consulta un MongoDB real (y falla si no hay uno levantado).
+    monkeypatch.setattr(vision_service, "_vivo_por_camara", lambda: {})
     monkeypatch.setattr(settings, "vision_pipeline_key", "clave-de-servicio")
     clave = {"X-Pipeline-Key": "clave-de-servicio"}
     assert client_anonimo.get(f"{API}/vision/camaras", headers=clave).status_code == 200
@@ -427,3 +431,32 @@ def test_con_auth_secret_en_el_entorno_no_se_usa_la_base(db_session, admin, monk
     assert auth.leer_token(db_session, token)["sub"] == admin.id
     monkeypatch.setattr(settings, "auth_secret", "otro-secreto")
     assert auth.leer_token(db_session, token) is None
+
+
+def test_quien_escanea_el_qr_solo_ve_los_datos_minimos_de_la_maquina(client, sucursal_id):
+    creado = client.post(
+        f"{API}/equipamiento/",
+        json={
+            "sucursal_id": sucursal_id,
+            "codigo_activo": "EQ-9001",
+            "nombre": "Cinta de correr",
+            "numero_serie": "SERIE-SECRETA",
+            "observaciones": "Nota interna",
+        },
+    ).json()
+    token = creado["qr_activo"]["token"]
+    client.cookies.clear()  # como alguien que escanea el QR con su celular, sin sesion
+
+    publico = client.get(f"{API}/equipamiento/qr/{token}")
+    assert publico.status_code == 200
+    assert publico.json()["nombre"] == "Cinta de correr"
+    assert set(publico.json()) == {"nombre", "categoria", "estado", "zona"}
+    assert "SERIE-SECRETA" not in publico.text and "Nota interna" not in publico.text
+
+
+def test_la_api_envia_cabeceras_de_seguridad_y_no_guarda_en_cache_la_sesion(client_anonimo):
+    r = client_anonimo.get(f"{API}/auth/estado")
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["x-frame-options"] == "DENY"
+    assert r.headers["cache-control"] == "no-store"
+    assert client_anonimo.get("/health").headers["x-content-type-options"] == "nosniff"

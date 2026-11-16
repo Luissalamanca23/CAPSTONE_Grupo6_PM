@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client.js'
 import { visionApi } from '../api/vision.js'
 import { ETIQUETA_CATEGORIA_EQUIPO } from '../components/CategoriaEquipoBadge.jsx'
@@ -97,11 +97,21 @@ const TONOS = {
   ok: { caja: 'border-emerald-200 bg-emerald-50', icono: 'text-emerald-600', titulo: 'text-emerald-800' },
 }
 
-const MAX_ITEMS_ALERTA = 3
+const ITEMS_POR_PAGINA_ALERTA = 3
+
+const VISTAS = [
+  { clave: 'resumen', etiqueta: 'Resumen' },
+  { clave: 'fallas', etiqueta: 'Fallas y costos' },
+  { clave: 'uso', etiqueta: 'Uso y demanda' },
+  { clave: 'maquinas', etiqueta: 'Máquinas' },
+]
 
 function TarjetaAtencion({ tono, icono, titulo, descripcion, items }) {
   const estilo = TONOS[tono]
-  const ocultas = items.length - MAX_ITEMS_ALERTA
+  const [pagina, setPagina] = useState(1)
+  const totalPaginas = Math.max(1, Math.ceil(items.length / ITEMS_POR_PAGINA_ALERTA))
+  const paginaActual = Math.min(pagina, totalPaginas)
+  const visibles = items.slice((paginaActual - 1) * ITEMS_POR_PAGINA_ALERTA, paginaActual * ITEMS_POR_PAGINA_ALERTA)
   return (
     <div className={`rounded-lg border p-4 ${estilo.caja}`}>
       <div className="flex items-start gap-3">
@@ -114,7 +124,7 @@ function TarjetaAtencion({ tono, icono, titulo, descripcion, items }) {
           </h3>
           <p className="mt-0.5 text-xs text-slate-600">{descripcion}</p>
           <ul className="mt-2 space-y-1">
-            {items.slice(0, MAX_ITEMS_ALERTA).map((item) => (
+            {visibles.map((item) => (
               <li key={item.clave} className="flex flex-wrap items-baseline justify-between gap-x-3 text-sm">
                 <Link to={`/equipos/${item.equipoId}`} className="font-medium text-slate-900 hover:underline">
                   {item.equipo}
@@ -123,7 +133,29 @@ function TarjetaAtencion({ tono, icono, titulo, descripcion, items }) {
               </li>
             ))}
           </ul>
-          {ocultas > 0 && <p className="mt-1 text-xs text-slate-500">y {ocultas} más</p>}
+          {totalPaginas > 1 && (
+            <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
+              <button
+                type="button"
+                disabled={paginaActual <= 1}
+                onClick={() => setPagina(paginaActual - 1)}
+                className="rounded border border-slate-300 bg-white/70 px-2 py-0.5 font-medium disabled:opacity-40 hover:bg-white"
+              >
+                ‹ Anterior
+              </button>
+              <span>
+                {paginaActual} de {totalPaginas}
+              </span>
+              <button
+                type="button"
+                disabled={paginaActual >= totalPaginas}
+                onClick={() => setPagina(paginaActual + 1)}
+                className="rounded border border-slate-300 bg-white/70 px-2 py-0.5 font-medium disabled:opacity-40 hover:bg-white"
+              >
+                Siguiente ›
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -134,11 +166,13 @@ export default function Dashboard() {
   const [equipos, setEquipos] = useState([])
   const [incidencias, setIncidencias] = useState([])
   const [mantenimientos, setMantenimientos] = useState([])
+  const [tcoEquipos, setTcoEquipos] = useState([])
   const [usoPorEquipo, setUsoPorEquipo] = useState(new Map())
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
   const [filtroZona, setFiltroZona] = useState('todas')
   const [periodoClave, setPeriodoClave] = useState('sem8')
+  const [parametros, setParametros] = useSearchParams()
 
   useEffect(() => {
     Promise.all([
@@ -146,11 +180,14 @@ export default function Dashboard() {
       traerTodo((pagina) => api.listarIncidencias(pagina)),
       // Si falla el historial de mantenciones el resto del panel sigue funcionando.
       api.listarTodosLosMantenimientos().catch(() => []),
+      // Costo total de propiedad por maquina (RF-32); si falla, solo se omite esa tarjeta.
+      api.listarTco().catch(() => []),
     ])
-      .then(([equiposData, incidenciasData, mantenimientosData]) => {
+      .then(([equiposData, incidenciasData, mantenimientosData, tcoData]) => {
         setEquipos(equiposData)
         setIncidencias(incidenciasData)
         setMantenimientos(mantenimientosData)
+        setTcoEquipos(tcoData)
       })
       .catch((err) => setError(err.message))
       .finally(() => setCargando(false))
@@ -217,9 +254,15 @@ export default function Dashboard() {
     [equipos, usoPorEquipo]
   )
 
+  // Pestañas del panel: la elegida queda en la direccion (?vista=...), asi se puede volver a ella.
+  const vista = VISTAS.some((v) => v.clave === parametros.get('vista')) ? parametros.get('vista') : 'resumen'
+  function elegirVista(clave) {
+    setParametros(clave === 'resumen' ? {} : { vista: clave }, { replace: true })
+  }
+
   // Los hooks de paginacion van antes de los return anticipados de mas abajo.
   const paginacionEquipos = usePaginacion(equiposFiltrados, 12, filtroZona)
-  const paginacionIncidencias = usePaginacion(urgentes, 8)
+  const paginacionIncidencias = usePaginacion(urgentes, 6)
 
   if (cargando) return <p className="text-slate-500">Cargando panel...</p>
   if (error) return <p className="text-red-600">Error al cargar datos: {error}</p>
@@ -231,6 +274,7 @@ export default function Dashboard() {
   const enMantencion = equipos.filter((e) => e.estado === 'en_mantenimiento')
   const operativos = equipos.filter((e) => e.estado === 'operativo')
   const enUsoAhora = equipos.filter((e) => usoPorEquipo.get(e.id)?.en_uso_ahora).length
+  const urgentesAbiertas = urgentes.filter((i) => i.prioridad === 'urgente' || i.prioridad === 'alta').length
 
   const { kpis, buckets, atencion } = analitica
   const etiquetas = buckets.map((b) => b.etiqueta)
@@ -238,6 +282,8 @@ export default function Dashboard() {
   const sumar = (lista) => lista.reduce((total, valor) => total + valor, 0)
   const totalReportadas = sumar(analitica.reportadasPorBucket)
   const totalGasto = sumar(analitica.gastoCorrectivo) + sumar(analitica.gastoPreventivo)
+  // TCO (RF-32): las 5 maquinas con mayor costo total de propiedad (la API ya las trae de mayor a menor).
+  const tcoRanking = tcoEquipos.filter((t) => t.tco > 0).slice(0, 5)
 
   // Distribuciones: se agrega el porcentaje del total para el tooltip.
   const conPorcentaje = (lista) => {
@@ -293,37 +339,61 @@ export default function Dashboard() {
     detalle: `${c.maquinas} máquinas (${c.porcentajeFlota}% de la flota) · ${c.porcentajeUso}% de las horas de uso`,
   }))
   const categoriasAltas = (demanda?.categorias ?? []).filter((c) => c.nivel === 'alta')
+  const hayDatosUso = Boolean(demanda) || analitica.usoSemana.length > 0
 
   return (
     <div className="space-y-6">
-      {/* 1. Encabezado principal */}
+      {/* Encabezado */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold text-slate-900">Panel de gestión</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Panel de gestión</h1>
+          <p className="text-sm text-slate-500">Qué necesita atención hoy y cómo va el gimnasio.</p>
+        </div>
         <div className="flex gap-2">
-          <Link
-            to="/equipos"
-            className="text-sm font-medium border border-slate-300 text-slate-600 rounded-md px-3 py-1.5 hover:bg-slate-100"
-          >
+          <Link to="/equipos" className="text-sm font-medium border border-slate-300 text-slate-600 rounded-md px-3 py-1.5 hover:bg-slate-100">
             + Registrar equipo
           </Link>
-          <Link
-            to="/incidencias"
-            className="text-sm font-medium bg-brand-600 text-white rounded-md px-3 py-1.5 hover:bg-brand-700"
-          >
+          <Link to="/incidencias" className="text-sm font-medium bg-brand-600 text-white rounded-md px-3 py-1.5 hover:bg-brand-700">
             Ver todas las incidencias
           </Link>
         </div>
       </div>
 
-      {/* 2. Tarjetas de métricas generales */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard titulo="Equipos registrados" valor={equipos.length} />
-        <StatCard titulo="Incidencias pendientes" valor={pendientes.length} />
-        <StatCard titulo="En proceso" valor={enProceso.length} />
-        <StatCard titulo="Equipos fuera de servicio" valor={fueraDeServicio.length} />
+      {/* Pestañas: cada tema en su propia vista, para no tener una pagina interminable */}
+      <div role="tablist" aria-label="Secciones del panel" className="flex gap-1 overflow-x-auto border-b border-slate-200">
+        {VISTAS.map((v) => {
+          const activa = v.clave === vista
+          return (
+            <button
+              key={v.clave}
+              id={`vista-${v.clave}`}
+              type="button"
+              role="tab"
+              aria-selected={activa}
+              aria-controls="panel-vista"
+              onClick={() => elegirVista(v.clave)}
+              className={`whitespace-nowrap px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 ${
+                activa ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              {v.etiqueta}
+            </button>
+          )
+        })}
       </div>
 
-      {/* 3. Atención recomendada: lo que conviene mirar hoy */}
+      <div id="panel-vista" role="tabpanel" aria-labelledby={`vista-${vista}`} className="space-y-6">
+      {vista === 'resumen' && (
+        <>
+          {/* Lo esencial de hoy, en cuatro cifras */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard titulo="Incidencias por atender" valor={pendientes.length + enProceso.length} detalle={`${pendientes.length} pendientes · ${enProceso.length} en proceso`} />
+            <StatCard titulo="Urgentes o altas abiertas" valor={urgentesAbiertas} detalle="Son las que no deberían esperar" />
+            <StatCard titulo="Máquinas operativas" valor={disponibilidad === null ? '—' : `${disponibilidad}%`} detalle={`${operativos.length} de ${flotaActiva} máquinas en servicio`} />
+            <StatCard titulo="Fuera de servicio" valor={fueraDeServicio.length} detalle={`${enMantencion.length} más en mantención`} />
+          </div>
+
+          {/* Atención recomendada: lo que conviene mirar hoy */}
       <section className="space-y-3">
         <div>
           <h2 className="text-lg font-semibold text-slate-800">Atención recomendada</h2>
@@ -371,12 +441,118 @@ export default function Dashboard() {
         )}
       </section>
 
-      {/* 4. Análisis: un solo filtro de periodo para todo lo que sigue */}
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3 items-start">
+            <div className="xl:col-span-2">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h2 className="font-semibold text-slate-800">Incidencias por atender</h2>
+            <p className="text-xs text-slate-500">Las abiertas, de más a menos prioritaria.</p>
+          </div>
+          <Link to="/incidencias" className="text-xs font-medium text-brand-700 underline hover:text-brand-800">
+            Ver historial completo
+          </Link>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-slate-500 bg-slate-50">
+              <tr>
+                <th className="px-5 py-2">Fecha y hora</th>
+                <th className="px-5 py-2">Equipo</th>
+                <th className="px-5 py-2">Tipo de falla</th>
+                <th className="px-5 py-2">Prioridad</th>
+                <th className="px-5 py-2">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginacionIncidencias.visibles.map((incidencia) => (
+                <tr key={incidencia.id} className="border-t border-slate-100">
+                  <td className="px-5 py-2 whitespace-nowrap">{formatearFechaHora(incidencia.fecha_reporte)}</td>
+                  <td className="px-5 py-2">
+                    {incidencia.equipo ? (
+                      <Link
+                        to={`/equipos/${incidencia.equipo.id}`}
+                        className="font-medium text-slate-900 hover:text-brand-700 inline-flex items-center gap-1.5"
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${getSaludEquipo(incidencia.equipo).punto}`}
+                        />
+                        {incidencia.equipo.nombre}
+                      </Link>
+                    ) : (
+                      `#${incidencia.equipo_id}`
+                    )}
+                  </td>
+                  <td className="px-5 py-2">
+                    <TipoFallaBadge tipoFalla={incidencia.tipo_falla} />
+                  </td>
+                  <td className="px-5 py-2">
+                    <PrioridadBadge prioridad={incidencia.prioridad} />
+                  </td>
+                  <td className="px-5 py-2">
+                    <EstadoBadge estado={incidencia.estado} />
+                  </td>
+                </tr>
+              ))}
+              {urgentes.length === 0 && (
+                <tr>
+                  <td className="px-5 py-4 text-slate-400" colSpan={5}>
+                    No hay incidencias pendientes.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <Paginacion paginacion={paginacionIncidencias} />
+      </div>
+            </div>
+          <TarjetaGrafico
+            titulo="Estado de la flota"
+            subtitulo="Cómo está hoy cada máquina"
+            vacio={totalFlota === 0}
+            mensajeVacio="Aún no hay máquinas registradas."
+            tabla={{
+              columnas: ['Estado', 'Máquinas', '% de la flota'],
+              filas: SEGMENTOS_FLOTA.map((s) => [s.etiqueta, s.valor, `${Math.round((s.valor / totalFlota) * 100)}%`]),
+            }}
+          >
+            <div className="space-y-4">
+              <div>
+                <p className="text-3xl font-bold text-slate-900">{disponibilidad === null ? '—' : `${disponibilidad}%`}</p>
+                <p className="text-xs text-slate-500">de las máquinas en servicio están operativas</p>
+              </div>
+              <BarraApilada segmentos={SEGMENTOS_FLOTA} nombreValor="máquinas" />
+              <ul className="space-y-1.5 text-sm">
+                {SEGMENTOS_FLOTA.map((s) => (
+                  <li key={s.clave} className="flex items-center justify-between gap-3">
+                    <span className="inline-flex items-center gap-2 text-slate-700">
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: s.color }} />
+                      {s.etiqueta}
+                    </span>
+                    <span className="font-medium tabular-nums text-slate-900">{s.valor}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </TarjetaGrafico>
+
+          </div>
+        </>
+      )}
+
+      {vista === 'fallas' && (
+        <>
+      {/* Fallas y costos: un solo filtro de periodo para todo lo que sigue */}
       <section className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-800">Análisis</h2>
-            <p className="text-xs text-slate-500">Las cifras y gráficos de esta sección usan el periodo elegido.</p>
+            <h2 className="text-lg font-semibold text-slate-800">Fallas y costos</h2>
+            <p className="text-xs text-slate-500">
+              Cuántas fallas hubo, cuánto tardan en resolverse y cuánto cuestan. Todo usa el periodo elegido a la derecha y se
+              compara con el periodo anterior.
+            </p>
           </div>
           <div className="flex flex-wrap gap-1.5" role="group" aria-label="Periodo de análisis">
             {PERIODOS.map((opcion) => {
@@ -527,6 +703,32 @@ export default function Dashboard() {
           </TarjetaGrafico>
 
           <TarjetaGrafico
+            titulo="Costo total por máquina (TCO)"
+            subtitulo="Compra + mantenciones acumuladas; las 5 con mayor TCO"
+            vacio={tcoRanking.length === 0}
+            mensajeVacio="Aún no hay costos de compra ni mantenciones con costo registrados."
+            tabla={{
+              columnas: ['Máquina', 'Compra', 'Mantenciones', 'TCO'],
+              filas: tcoRanking.map((t) => [
+                t.nombre,
+                t.adquisicion_registrada ? formatearMonto(t.costo_adquisicion) : 'Sin registrar',
+                formatearMonto(t.costo_mantenciones),
+                formatearMonto(t.tco),
+              ]),
+            }}
+          >
+            <BarrasHorizontales
+              items={tcoRanking.map((t) => ({
+                id: t.equipo_id,
+                etiqueta: t.nombre,
+                valor: t.tco,
+                detalle: t.adquisicion_registrada ? undefined : 'Sin costo de compra registrado',
+              }))}
+              formatoValor={formatearMonto}
+            />
+          </TarjetaGrafico>
+
+          <TarjetaGrafico
             titulo="Máquinas que más cuestan"
             subtitulo="Las 5 con más gasto en mantenciones"
             vacio={analitica.rankingGasto.length === 0}
@@ -537,6 +739,51 @@ export default function Dashboard() {
             }}
           >
             <BarrasHorizontales items={analitica.rankingGasto} formatoValor={formatearMonto} />
+          </TarjetaGrafico>
+
+          <TarjetaGrafico
+            titulo="Costo de mantenimiento por marca"
+            subtitulo="Gasto del periodo según la marca del equipo"
+            vacio={analitica.gastoPorMarca.length === 0}
+            mensajeVacio="No hay mantenciones con costo registrado en este periodo."
+            tabla={{
+              columnas: ['Marca', 'Gasto'],
+              filas: analitica.gastoPorMarca.map((m) => [m.etiqueta, formatearMonto(m.valor)]),
+            }}
+          >
+            <BarrasHorizontales items={analitica.gastoPorMarca} formatoValor={formatearMonto} />
+          </TarjetaGrafico>
+
+          <TarjetaGrafico
+            titulo="Costo de mantenimiento por categoría"
+            subtitulo="Gasto del periodo según el tipo de máquina"
+            vacio={analitica.gastoPorCategoria.length === 0}
+            mensajeVacio="No hay mantenciones con costo registrado en este periodo."
+            tabla={{
+              columnas: ['Categoría', 'Gasto'],
+              filas: analitica.gastoPorCategoria.map((c) => [c.etiqueta, formatearMonto(c.valor)]),
+            }}
+          >
+            <BarrasHorizontales items={analitica.gastoPorCategoria} formatoValor={formatearMonto} />
+          </TarjetaGrafico>
+
+          <TarjetaGrafico
+            titulo="Marcas más problemáticas"
+            subtitulo="Las 5 marcas con más incidencias en el periodo"
+            vacio={analitica.marcasProblematicas.length === 0}
+            mensajeVacio="No hay incidencias de equipos con marca registrada en este periodo."
+            tabla={{
+              columnas: ['Marca', 'Incidencias', 'Equipos', 'Incidencias por equipo', 'Gasto'],
+              filas: analitica.marcasProblematicas.map((m) => [
+                m.etiqueta,
+                m.valor,
+                m.equipos,
+                m.fallasPorEquipo === null ? '—' : m.fallasPorEquipo.toLocaleString('es-CL', { maximumFractionDigits: 1 }),
+                formatearMonto(m.gasto),
+              ]),
+            }}
+          >
+            <BarrasHorizontales items={analitica.marcasProblematicas} formatoValor={formatoNumero} nombreValor="incidencias" />
           </TarjetaGrafico>
 
           <TarjetaGrafico
@@ -551,36 +798,30 @@ export default function Dashboard() {
             <MapaCalor matriz={analitica.calor.matriz} maximo={analitica.calor.maximo} filas={DIAS_SEMANA} columnas={BLOQUES_HORA} />
           </TarjetaGrafico>
 
-          <TarjetaGrafico
-            titulo="Estado de la flota"
-            subtitulo="Foto de hoy, no depende del periodo"
-            vacio={totalFlota === 0}
-            mensajeVacio="Aún no hay máquinas registradas."
-            tabla={{
-              columnas: ['Estado', 'Máquinas', '% de la flota'],
-              filas: SEGMENTOS_FLOTA.map((s) => [s.etiqueta, s.valor, `${Math.round((s.valor / totalFlota) * 100)}%`]),
-            }}
-          >
-            <div className="space-y-4">
-              <div>
-                <p className="text-3xl font-bold text-slate-900">{disponibilidad === null ? '—' : `${disponibilidad}%`}</p>
-                <p className="text-xs text-slate-500">de las máquinas en servicio están operativas</p>
-              </div>
-              <BarraApilada segmentos={SEGMENTOS_FLOTA} nombreValor="máquinas" />
-              <ul className="space-y-1.5 text-sm">
-                {SEGMENTOS_FLOTA.map((s) => (
-                  <li key={s.clave} className="flex items-center justify-between gap-3">
-                    <span className="inline-flex items-center gap-2 text-slate-700">
-                      <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: s.color }} />
-                      {s.etiqueta}
-                    </span>
-                    <span className="font-medium tabular-nums text-slate-900">{s.valor}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </TarjetaGrafico>
+        </div>
+      </section>
 
+        </>
+      )}
+
+      {vista === 'uso' && (
+        <>
+          {!hayDatosUso && (
+            <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
+              <p className="font-medium text-slate-800">Todavía no hay datos de uso.</p>
+              <p className="mt-1">
+                Esta sección se llena con lo que detectan las cámaras: cuánto se usa cada máquina y cuáles conviene ampliar.{' '}
+                <Link to="/camaras" className="font-medium text-brand-700 underline">Ir a Cámaras</Link>
+              </p>
+            </div>
+          )}
+          {analitica.usoSemana.length > 0 && (
+            <section className="space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-800">Uso reciente</h2>
+                <p className="text-xs text-slate-500">Qué máquinas se usaron más en la última semana.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4">
           {analitica.usoSemana.length > 0 && (
             <TarjetaGrafico
               className="lg:col-span-2"
@@ -594,10 +835,9 @@ export default function Dashboard() {
               <BarrasHorizontales items={analitica.usoSemana} formatoValor={formatoHoras} />
             </TarjetaGrafico>
           )}
-        </div>
-      </section>
-
-      {/* 4b. Demanda: que maquinas se ocupan mas y cuales conviene sumar */}
+              </div>
+            </section>
+          )}
       {demanda && (
         <section className="space-y-4">
           <div>
@@ -688,7 +928,12 @@ export default function Dashboard() {
         </section>
       )}
 
-      {/* 5. MONITOR EN TIEMPO REAL DEL ESTADO DE MÁQUINAS */}
+        </>
+      )}
+
+      {vista === 'maquinas' && (
+        <>
+      {/* Estado de cada máquina, por zona */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -696,7 +941,7 @@ export default function Dashboard() {
               <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
-              Estado de máquinas en tiempo real
+              Estado de cada máquina
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               Disponibilidad: {operativos.length} operativas · {enMantencion.length} en mantención ·{' '}
@@ -787,63 +1032,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 6. Tabla de Incidencias Urgentes */}
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-200">
-          <h2 className="font-semibold text-slate-800">Incidencias por atender (ordenadas por prioridad)</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-slate-500 bg-slate-50">
-              <tr>
-                <th className="px-5 py-2">Fecha y hora</th>
-                <th className="px-5 py-2">Equipo</th>
-                <th className="px-5 py-2">Tipo de falla</th>
-                <th className="px-5 py-2">Prioridad</th>
-                <th className="px-5 py-2">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginacionIncidencias.visibles.map((incidencia) => (
-                <tr key={incidencia.id} className="border-t border-slate-100">
-                  <td className="px-5 py-2 whitespace-nowrap">{formatearFechaHora(incidencia.fecha_reporte)}</td>
-                  <td className="px-5 py-2">
-                    {incidencia.equipo ? (
-                      <Link
-                        to={`/equipos/${incidencia.equipo.id}`}
-                        className="font-medium text-slate-900 hover:text-brand-700 inline-flex items-center gap-1.5"
-                      >
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${getSaludEquipo(incidencia.equipo).punto}`}
-                        />
-                        {incidencia.equipo.nombre}
-                      </Link>
-                    ) : (
-                      `#${incidencia.equipo_id}`
-                    )}
-                  </td>
-                  <td className="px-5 py-2">
-                    <TipoFallaBadge tipoFalla={incidencia.tipo_falla} />
-                  </td>
-                  <td className="px-5 py-2">
-                    <PrioridadBadge prioridad={incidencia.prioridad} />
-                  </td>
-                  <td className="px-5 py-2">
-                    <EstadoBadge estado={incidencia.estado} />
-                  </td>
-                </tr>
-              ))}
-              {urgentes.length === 0 && (
-                <tr>
-                  <td className="px-5 py-4 text-slate-400" colSpan={5}>
-                    No hay incidencias pendientes.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        <Paginacion paginacion={paginacionIncidencias} />
+        </>
+      )}
       </div>
     </div>
   )

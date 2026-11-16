@@ -4,7 +4,9 @@ import { visionApi } from '../../api/vision.js'
 import CategoriaEquipoBadge from '../../components/CategoriaEquipoBadge.jsx'
 import EstadoBadge from '../../components/EstadoBadge.jsx'
 import PrioridadBadge from '../../components/PrioridadBadge.jsx'
+import Paginacion from '../../components/Paginacion.jsx'
 import StatCard from '../../components/StatCard.jsx'
+import { usePaginacion } from '../../utils/paginacion.js'
 import { formatearFechaHora, formatearMonto } from '../../utils/formato.js'
 import GraficoUsoDiario from './GraficoUsoDiario.jsx'
 import { ChipVivo, FotoMaquina } from './UsoMaquinas.jsx'
@@ -17,9 +19,12 @@ const ESTILO_SESION = {
   descartada: 'bg-slate-50 text-slate-400 line-through',
 }
 
+// Tabla con paginacion (10 filas por pagina): `filas` son los <tr> ya armados.
 function Tabla({ columnas, filas, vacio }) {
+  const paginacion = usePaginacion(filas, 10)
   if (filas.length === 0) return <p className="p-5 text-sm text-slate-500">{vacio}</p>
   return (
+    <div>
     <div className="overflow-x-auto">
       <table className="min-w-full text-sm">
         <thead className="text-left text-slate-500 bg-slate-50">
@@ -31,8 +36,10 @@ function Tabla({ columnas, filas, vacio }) {
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">{filas}</tbody>
+        <tbody className="divide-y divide-slate-100">{paginacion.visibles}</tbody>
       </table>
+    </div>
+    <Paginacion paginacion={paginacion} />
     </div>
   )
 }
