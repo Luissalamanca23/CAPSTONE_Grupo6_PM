@@ -1,0 +1,111 @@
+# Override para Raspberry Pi 5 (8 GB, ARM64): panel + API + bases de datos + vision en UN servidor
+# local de la sede. Se usa SIEMPRE junto con los otros dos archivos, en este orden:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.rpi.yml up -d --build
+#
+# (raspberry-pi/instalar-raspberry.sh ya lo hace). Requiere Docker Compose >= 2.24, igual que
+# docker-compose.prod.yml. Guia completa: raspberry-pi/LEEME.md.
+#
+# Que agrega sobre produccion:
+# - frontend: la web compilada y servida por nginx en el puerto 80 (el panel y /api/v1 en un solo
+#   origen). Es el mismo Dockerfile y nginx.conf de la demo publica.
+# - vision: el pipeline con el perfil `rpi` (2,5 analisis/s, YOLO solo con movimiento y modelo NCNN).
+#   El modelo NCNN se exporta al construir la imagen (EXPORTAR_NCNN=1), asi la Pi no necesita
+#   internet para arrancar.
+# - Limites de memoria y de cache para que las dos bases, la API y la vision convivan en 8 GB.
+#   Son TOPES de configuracion, no consumos medidos.
+# - La API solo escucha en 127.0.0.1 (el acceso de la red pasa por nginx).
+# - minio y los visores de base de datos siguen detras de sus profiles (storage y bd): no se
+#   levantan y no hacen falta en la sede.
+
+name: gymkeep
+
+services:
+  db:
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - max_connections=40
+    mem_limit: 1g
+
+  mongo:
+    # Sin este tope WiredTiger toma la mitad de la RAM del equipo.
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.5"]
+    mem_limit: 1g
+
+  api:
+    mem_limit: 768m
+    ports: !override
+      - "127.0.0.1:8000:8000"
+
+  respaldo-postgres:
+    mem_limit: 128m
+
+  respaldo-mongo:
+    mem_limit: 256m
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../demo-publica/Dockerfile.frontend
+      args:
+        VITE_API_URL: /api/v1
+    container_name: gymkeep_web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-80}:80"
+    volumes:
+      - ./demo-publica/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    mem_limit: 128m
+
+  vision:
+    build:
+      context: ./vision
+      args:
+        EXPORTAR_NCNN: "1"
+    image: gymkeep-vision:rpi
+    container_name: gymkeep_vision
+    restart: unless-stopped
+    # Ctrl+C (SIGINT): el pipeline cierra las sesiones abiertas antes de salir.
+    stop_signal: SIGINT
+    depends_on:
+      - api
+    # Tope de CPU por camara y de hilos del modelo: deja nucleos libres para la API y las bases.
+    # Con la Pi 5 (4 nucleos) 2 por camara es el punto de partida; ver raspberry-pi/LEEME.md.
+    cpus: ${VISION_CPUS:-2}
+    mem_limit: 3g
+    environment:
+      TZ: America/Santiago
+      OMP_NUM_THREADS: ${VISION_HILOS:-2}
+      YOLO_CONFIG_DIR: /tmp/Ultralytics
+      VISION_API: http://api:8000
+      VISION_CAMARA: ${VISION_CAMARA:-CAM-01}
+      # Una camara IP: rtsp://usuario:clave@192.168.x.x:554/stream. Para probar sin camara,
+      # un video puesto en vision/datos/ (dentro del contenedor: /app/datos/<archivo>).
+      VISION_FUENTE: ${VISION_FUENTE:?Define VISION_FUENTE (rtsp://... o /app/datos/video.mp4) en el .env}
+      VISION_OPCIONES: ${VISION_OPCIONES:---perfil rpi}
+      VISION_CUADRO_CADA_S: ${VISION_CUADRO_CADA_S:-2}
+      VISION_PIPELINE_KEY: ${VISION_PIPELINE_KEY:?Define VISION_PIPELINE_KEY en el .env}
+      VISION_PIN: ${VISION_PIN:-}
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        case "$$VISION_FUENTE" in rtsp://*|rtsps://*|http://*|https://*) ;;
+        *) if [ ! -f "$$VISION_FUENTE" ]; then
+        echo "No existe el video $$VISION_FUENTE dentro del contenedor. Los videos van en vision/datos/ y se ven como /app/datos/<archivo>.";
+        sleep 30; exit 1; fi ;; esac;
+        exec python -m gymkeep_vision procesar "$$VISION_FUENTE" --api "$$VISION_API"
+        --camara "$$VISION_CAMARA" --esperar-api 180 --cuadro-cada "$$VISION_CUADRO_CADA_S"
+        --sin-video --inicio "$$(date -Iseconds)" -o /app/salida/vivo $$VISION_OPCIONES
+    volumes:
+      - ./vision/datos:/app/datos:ro
+      - vision_salida:/app/salida
+
+volumes:
+  vision_salida:

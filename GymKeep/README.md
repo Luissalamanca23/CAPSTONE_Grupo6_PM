@@ -276,6 +276,14 @@ en `127.0.0.1`; y las claves son obligatorias (sin valores por defecto). Si falt
 administradora con `crear-admin.bat` (ver "Inicio de sesión y seguridad"). La imagen de la API corre con un usuario sin privilegios y declara un
 `HEALTHCHECK` contra `/health`.
 
+### Servidor local en una Raspberry Pi 5 (8 GB)
+
+`docker-compose.rpi.yml` es un tercer override (sobre `docker-compose.yml` y `docker-compose.prod.yml`)
+que agrega el panel servido por nginx, el módulo de visión con el perfil `rpi` y topes de memoria
+para las bases de datos. Se instala con `bash raspberry-pi/instalar-raspberry.sh` y la guía completa
+(hardware, instalación, operación, cómo medir el rendimiento y problemas frecuentes) está en
+[`raspberry-pi/LEEME.md`](raspberry-pi/LEEME.md).
+
 ### Notas según tu terminal (Windows)
 
 - **PowerShell** no soporta `<` para redirigir un archivo a un comando. Si necesitas pasar

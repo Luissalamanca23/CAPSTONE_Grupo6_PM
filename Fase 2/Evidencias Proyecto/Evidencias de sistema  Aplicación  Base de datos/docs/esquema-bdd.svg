@@ -1,0 +1,224 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1200" viewBox="0 0 1800 1200" role="img" aria-labelledby="title desc">
+  <title id="title">Esquema de base de datos del sistema de gestión de incidencias</title>
+  <desc id="desc">Diagrama entidad-relación de las tablas equipos e incidencias, relacionadas uno a muchos.</desc>
+
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#15304A" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      text { font-family: Arial, sans-serif; }
+      .title { font-size: 42px; font-weight: 700; fill: #102A43; }
+      .subtitle { font-size: 20px; font-weight: 400; fill: #5B7083; }
+      .table-title { font-size: 27px; font-weight: 700; fill: #FFFFFF; letter-spacing: 0.4px; }
+      .table-kind { font-size: 15px; font-weight: 600; fill: #B9D7EA; letter-spacing: 1.6px; }
+      .column-head { font-size: 14px; font-weight: 700; fill: #52697D; letter-spacing: 1px; }
+      .field { font-size: 18px; font-weight: 600; fill: #17324D; }
+      .type { font-family: Menlo, monospace; font-size: 17px; font-weight: 500; fill: #325D79; }
+      .constraint { font-size: 14px; font-weight: 600; fill: #657B8F; }
+      .key { font-size: 13px; font-weight: 800; fill: #FFFFFF; }
+      .relation-main { font-size: 18px; font-weight: 800; fill: #0B7285; }
+      .relation-note { font-size: 15px; font-weight: 600; fill: #42657A; }
+      .panel-title { font-size: 20px; font-weight: 700; fill: #17324D; }
+      .enum-name { font-size: 16px; font-weight: 700; fill: #23516C; }
+      .enum-value { font-family: Menlo, monospace; font-size: 15px; font-weight: 500; fill: #52697D; }
+      .legend { font-size: 15px; font-weight: 600; fill: #52697D; }
+      .footer { font-size: 14px; font-weight: 500; fill: #72869A; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1200" fill="#F4F7FB"/>
+  <path d="M0 0H1800V12H0Z" fill="#0B7285"/>
+
+  <text class="title" x="70" y="80">Esquema de base de datos</text>
+  <text class="subtitle" x="70" y="116">Sistema de gestión de equipos e incidencias · PostgreSQL / SQLAlchemy</text>
+
+  <g transform="translate(1270 60)">
+    <rect x="0" y="0" width="460" height="70" rx="14" fill="#FFFFFF" stroke="#D8E3EC"/>
+    <rect x="24" y="20" width="42" height="28" rx="7" fill="#D9A441"/>
+    <text class="key" x="45" y="39" text-anchor="middle">PK</text>
+    <text class="legend" x="77" y="40">Clave primaria</text>
+    <rect x="242" y="20" width="42" height="28" rx="7" fill="#0B7285"/>
+    <text class="key" x="263" y="39" text-anchor="middle">FK</text>
+    <text class="legend" x="295" y="40">Clave foránea</text>
+  </g>
+
+  <!-- Tabla equipos -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="180" width="700" height="590" rx="18" fill="#FFFFFF"/>
+    <path d="M88 180H752A18 18 0 0 1 770 198V236H70V198A18 18 0 0 1 88 180Z" fill="#173A5E"/>
+    <text class="table-kind" x="105" y="207">TABLA</text>
+    <text class="table-title" x="105" y="232">equipos</text>
+    <rect x="70" y="236" width="700" height="42" fill="#E8F0F6"/>
+    <text class="column-head" x="105" y="263">CAMPO</text>
+    <text class="column-head" x="365" y="263">TIPO</text>
+    <text class="column-head" x="585" y="263">REGLAS</text>
+
+    <rect x="70" y="278" width="700" height="61" fill="#FFF9EA"/>
+    <rect x="70" y="339" width="700" height="62" fill="#FFFFFF"/>
+    <rect x="70" y="401" width="700" height="62" fill="#F8FAFC"/>
+    <rect x="70" y="463" width="700" height="62" fill="#FFFFFF"/>
+    <rect x="70" y="525" width="700" height="62" fill="#F8FAFC"/>
+    <rect x="70" y="587" width="700" height="62" fill="#FFFFFF"/>
+    <rect x="70" y="649" width="700" height="62" fill="#F8FAFC"/>
+    <path d="M70 711H770V752A18 18 0 0 1 752 770H88A18 18 0 0 1 70 752Z" fill="#FFFFFF"/>
+
+    <g stroke="#E2EAF0" stroke-width="1">
+      <path d="M70 339H770M70 401H770M70 463H770M70 525H770M70 587H770M70 649H770M70 711H770"/>
+      <path d="M335 236V770M555 236V770"/>
+    </g>
+
+    <rect x="94" y="294" width="40" height="27" rx="7" fill="#D9A441"/>
+    <text class="key" x="114" y="313" text-anchor="middle">PK</text>
+    <text class="field" x="148" y="314">id</text>
+    <text class="type" x="365" y="314">INTEGER</text>
+    <text class="constraint" x="585" y="314">NOT NULL · INDEX</text>
+
+    <text class="field" x="105" y="376">codigo_qr</text>
+    <text class="type" x="365" y="376">VARCHAR(64)</text>
+    <text class="constraint" x="585" y="369">NOT NULL · UNIQUE</text>
+    <text class="constraint" x="585" y="389">INDEX</text>
+
+    <text class="field" x="105" y="438">nombre</text>
+    <text class="type" x="365" y="438">VARCHAR(120)</text>
+    <text class="constraint" x="585" y="438">NOT NULL</text>
+
+    <text class="field" x="105" y="500">marca</text>
+    <text class="type" x="365" y="500">VARCHAR(80)</text>
+    <text class="constraint" x="585" y="500">NULL</text>
+
+    <text class="field" x="105" y="562">modelo</text>
+    <text class="type" x="365" y="562">VARCHAR(80)</text>
+    <text class="constraint" x="585" y="562">NULL</text>
+
+    <text class="field" x="105" y="624">ubicacion</text>
+    <text class="type" x="365" y="624">VARCHAR(120)</text>
+    <text class="constraint" x="585" y="624">NULL</text>
+
+    <text class="field" x="105" y="686">estado</text>
+    <text class="type" x="365" y="686">EstadoEquipo</text>
+    <text class="constraint" x="585" y="679">NOT NULL</text>
+    <text class="constraint" x="585" y="699">DEF. operativo</text>
+
+    <text class="field" x="105" y="748">fecha_registro</text>
+    <text class="type" x="365" y="748">TIMESTAMPTZ</text>
+    <text class="constraint" x="585" y="748">DEF. now()</text>
+  </g>
+
+  <!-- Tabla incidencias -->
+  <g filter="url(#shadow)">
+    <rect x="1030" y="180" width="700" height="652" rx="18" fill="#FFFFFF"/>
+    <path d="M1048 180H1712A18 18 0 0 1 1730 198V236H1030V198A18 18 0 0 1 1048 180Z" fill="#173A5E"/>
+    <text class="table-kind" x="1065" y="207">TABLA</text>
+    <text class="table-title" x="1065" y="232">incidencias</text>
+    <rect x="1030" y="236" width="700" height="42" fill="#E8F0F6"/>
+    <text class="column-head" x="1065" y="263">CAMPO</text>
+    <text class="column-head" x="1325" y="263">TIPO</text>
+    <text class="column-head" x="1545" y="263">REGLAS</text>
+
+    <rect x="1030" y="278" width="700" height="61" fill="#FFF9EA"/>
+    <rect x="1030" y="339" width="700" height="62" fill="#E7F7F8"/>
+    <rect x="1030" y="401" width="700" height="62" fill="#F8FAFC"/>
+    <rect x="1030" y="463" width="700" height="62" fill="#FFFFFF"/>
+    <rect x="1030" y="525" width="700" height="62" fill="#F8FAFC"/>
+    <rect x="1030" y="587" width="700" height="62" fill="#FFFFFF"/>
+    <rect x="1030" y="649" width="700" height="62" fill="#F8FAFC"/>
+    <rect x="1030" y="711" width="700" height="62" fill="#FFFFFF"/>
+    <path d="M1030 773H1730V814A18 18 0 0 1 1712 832H1048A18 18 0 0 1 1030 814Z" fill="#F8FAFC"/>
+
+    <g stroke="#E2EAF0" stroke-width="1">
+      <path d="M1030 339H1730M1030 401H1730M1030 463H1730M1030 525H1730M1030 587H1730M1030 649H1730M1030 711H1730M1030 773H1730"/>
+      <path d="M1295 236V832M1515 236V832"/>
+    </g>
+
+    <rect x="1054" y="294" width="40" height="27" rx="7" fill="#D9A441"/>
+    <text class="key" x="1074" y="313" text-anchor="middle">PK</text>
+    <text class="field" x="1108" y="314">id</text>
+    <text class="type" x="1325" y="314">INTEGER</text>
+    <text class="constraint" x="1545" y="314">NOT NULL · INDEX</text>
+
+    <rect x="1054" y="356" width="40" height="27" rx="7" fill="#0B7285"/>
+    <text class="key" x="1074" y="375" text-anchor="middle">FK</text>
+    <text class="field" x="1108" y="376">equipo_id</text>
+    <text class="type" x="1325" y="376">INTEGER</text>
+    <text class="constraint" x="1545" y="369">NOT NULL</text>
+    <text class="constraint" x="1545" y="389">→ equipos.id</text>
+
+    <text class="field" x="1065" y="438">tipo_falla</text>
+    <text class="type" x="1325" y="438">TipoFalla</text>
+    <text class="constraint" x="1545" y="438">NOT NULL</text>
+
+    <text class="field" x="1065" y="500">descripcion</text>
+    <text class="type" x="1325" y="500">TEXT</text>
+    <text class="constraint" x="1545" y="500">NULL</text>
+
+    <text class="field" x="1065" y="562">reportado_por</text>
+    <text class="type" x="1325" y="562">VARCHAR(120)</text>
+    <text class="constraint" x="1545" y="562">NULL</text>
+
+    <text class="field" x="1065" y="624">estado</text>
+    <text class="type" x="1325" y="624">EstadoIncidencia</text>
+    <text class="constraint" x="1545" y="617">NOT NULL</text>
+    <text class="constraint" x="1545" y="637">DEF. pendiente</text>
+
+    <text class="field" x="1065" y="686">prioridad</text>
+    <text class="type" x="1325" y="686">Prioridad</text>
+    <text class="constraint" x="1545" y="679">NOT NULL</text>
+    <text class="constraint" x="1545" y="699">DEF. media</text>
+
+    <text class="field" x="1065" y="748">fecha_reporte</text>
+    <text class="type" x="1325" y="748">TIMESTAMPTZ</text>
+    <text class="constraint" x="1545" y="748">DEF. now()</text>
+
+    <text class="field" x="1065" y="810">fecha_resolucion</text>
+    <text class="type" x="1325" y="810">TIMESTAMPTZ</text>
+    <text class="constraint" x="1545" y="810">NULL</text>
+  </g>
+
+  <!-- Relación 1:N -->
+  <g>
+    <line x1="770" y1="308" x2="808" y2="308" stroke="#0B7285" stroke-width="4"/>
+    <line x1="808" y1="308" x2="808" y2="340" stroke="#0B7285" stroke-width="4"/>
+    <line x1="808" y1="340" x2="1008" y2="340" stroke="#0B7285" stroke-width="4"/>
+    <line x1="1008" y1="340" x2="1008" y2="370" stroke="#0B7285" stroke-width="4"/>
+    <line x1="1008" y1="370" x2="1011" y2="370" stroke="#0B7285" stroke-width="4"/>
+    <line x1="788" y1="296" x2="788" y2="320" stroke="#0B7285" stroke-width="4"/>
+    <line x1="1011" y1="370" x2="1028" y2="356" stroke="#0B7285" stroke-width="4" stroke-linecap="round"/>
+    <line x1="1011" y1="370" x2="1028" y2="370" stroke="#0B7285" stroke-width="4" stroke-linecap="round"/>
+    <line x1="1011" y1="370" x2="1028" y2="384" stroke="#0B7285" stroke-width="4" stroke-linecap="round"/>
+    <rect x="833" y="263" width="148" height="42" rx="21" fill="#DFF3F5" stroke="#9DDDE1"/>
+    <text class="relation-main" x="907" y="290" text-anchor="middle">1 : N</text>
+    <text class="relation-note" x="900" y="410" text-anchor="middle">Un equipo registra</text>
+    <text class="relation-note" x="900" y="431" text-anchor="middle">muchas incidencias</text>
+    <rect x="816" y="451" width="184" height="34" rx="8" fill="#FFFFFF" stroke="#C8D8E4"/>
+    <text class="relation-note" x="908" y="473" text-anchor="middle">ON DELETE CASCADE</text>
+  </g>
+
+  <!-- Enumeraciones -->
+  <g>
+    <rect x="70" y="885" width="1660" height="230" rx="18" fill="#FFFFFF" stroke="#D8E3EC"/>
+    <text class="panel-title" x="105" y="925">Dominios enumerados</text>
+    <path d="M520 945V1080M930 945V1080M1335 945V1080" stroke="#E2EAF0" stroke-width="2"/>
+
+    <text class="enum-name" x="105" y="966">EstadoEquipo</text>
+    <text class="enum-value" x="105" y="998">operativo</text>
+    <text class="enum-value" x="105" y="1026">en_mantenimiento</text>
+    <text class="enum-value" x="105" y="1054">fuera_de_servicio</text>
+
+    <text class="enum-name" x="555" y="966">TipoFalla</text>
+    <text class="enum-value" x="555" y="998">desgaste · sonido_extrano</text>
+    <text class="enum-value" x="555" y="1026">rota · no_enciende</text>
+    <text class="enum-value" x="555" y="1054">otro</text>
+
+    <text class="enum-name" x="965" y="966">EstadoIncidencia</text>
+    <text class="enum-value" x="965" y="998">pendiente · en_proceso</text>
+    <text class="enum-value" x="965" y="1026">resuelta · descartada</text>
+
+    <text class="enum-name" x="1370" y="966">PrioridadIncidencia</text>
+    <text class="enum-value" x="1370" y="998">baja · media</text>
+    <text class="enum-value" x="1370" y="1026">alta · urgente</text>
+  </g>
+
+  <text class="footer" x="70" y="1162">Fuente: app/models/equipamiento.py · app/models/incidencia.py</text>
+  <text class="footer" x="1730" y="1162" text-anchor="end">Generado desde la definición actual de los modelos</text>
+</svg>

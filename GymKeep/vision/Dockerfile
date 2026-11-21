@@ -24,5 +24,12 @@ RUN python -c "from gymkeep_vision.config import ConfigModelo; from ultralytics 
 # Detector de rostros (YuNet) para la privacidad de la imagen.
 RUN python -c "from gymkeep_vision import rostros; rostros.descargar()"
 
+# Solo para Raspberry Pi (docker-compose.rpi.yml): deja exportado el modelo NCNN (formato mas
+# rapido en CPU ARM) para que el contenedor no necesite internet al arrancar.
+ARG EXPORTAR_NCNN=0
+RUN if [ "$EXPORTAR_NCNN" = "1" ]; then \
+      python -c "from gymkeep_vision.config import ConfigModelo; print(ConfigModelo(formato='ncnn').ruta_modelo())"; \
+    fi
+
 ENV PYTHONUNBUFFERED=1
 ENTRYPOINT ["python", "-m", "gymkeep_vision"]

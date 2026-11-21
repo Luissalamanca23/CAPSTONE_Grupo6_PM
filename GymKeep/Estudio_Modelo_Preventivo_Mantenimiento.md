@@ -4,7 +4,7 @@
 **Asignatura:** Capstone PTY4614 — Duoc UC, sede Puerto Montt
 **Equipo:** Braihan González, Luis Salamanca, Benjamín Oviedo
 **Fecha de elaboración:** 21 de septiembre de 2026
-**Estado del documento:** versión de ingeniería, completa y consolidada. Pendiente de una única tarea externa: la verificación documental de las fuentes (ver §0 y Anexo A).
+**Estado del documento:** versión de ingeniería, completa y consolidada. Limitación declarada: las referencias externas no se verificaron por lectura directa y sus cifras se tratan como supuestos configurables (ver §0 y Anexo A).
 
 ---
 
@@ -684,7 +684,7 @@ El catálogo vigente en `postgres/schema.sql:490-499` contiene seis códigos gen
 
 #### 4.3.2 Intervalos expresados en horas de uso
 
-Tabla de mayor valor operativo de la sección. **Todos los valores están pendientes de verificación documental y se adoptan como supuestos del proyecto (regla E-1).**
+Tabla de mayor valor operativo de la sección. **Ningún valor se verificó documentalmente: todos se adoptan como supuestos del proyecto (regla E-1).**
 
 | Fabricante / fuente | Equipo | Tarea | Intervalo en horas de uso | Etiqueta |
 |---|---|---|---|---|

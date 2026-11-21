@@ -54,24 +54,24 @@ el uso de las máquinas con visión por computadora y optimice la gestión del m
 
 ## Metodología
 
-Scrum, con sprints de 2 semanas durante las 18 semanas del semestre:
+Scrum, con nueve sprints entre el 17 de agosto y el 30 de noviembre de 2026 (seis de dos semanas y tres de una semana), precedidos de una semana de análisis. Las tres fases de la asignatura:
 
-| Fase | Semanas | Contenido |
+| Fase | Fechas (2026) | Contenido |
 |---|---|---|
-| 1. Definición | 1 a 4 | Problema, requisitos, alcance y planificación |
-| 2. Desarrollo | 5 a 14 | Base de datos, API, reporte QR, visión por computadora y panel |
-| 3. Certificación y cierre | 15 a 18 | Pruebas de calidad, documentación y presentación final |
+| 1. Definición | 10 al 28 de agosto | Problema, requisitos, alcance y planificación |
+| 2. Desarrollo | 31 de agosto al 20 de noviembre | Base de datos, API, reporte QR, visión por computadora y panel |
+| 3. Certificación y cierre | 23 al 30 de noviembre | Pruebas de calidad, documentación y presentación final |
 
 ## Estado
 
 | Componente | Estado |
 |---|---|
-| Base de datos (PostgreSQL, MongoDB, MinIO) | Implementado |
+| Base de datos (PostgreSQL, MongoDB; MinIO opcional) | Implementado |
 | API backend | Implementado |
 | Reporte por QR | Implementado |
-| Panel web de gestión | Implementado |
-| Módulo de visión por computadora | En integración (rama `modulo-vision`) |
-| Panel de costos (TCO) y autenticación | Pendiente |
+| Panel web de gestión | Implementado (con avisos de incidencias, informes de funcionamiento y respaldo automático) |
+| Módulo de visión por computadora | Implementado y validado con video grabado (perfil `rpi` para Raspberry Pi 5) |
+| Panel de costos (TCO) y autenticación (RUN y clave, roles administrador y técnico) | Implementado |
 
 ## Tecnologías
 
@@ -82,6 +82,7 @@ Python, FastAPI, PostgreSQL, MongoDB, MinIO · React, Vite, Tailwind · YOLO, Op
 ```text
 Fase 1/     Documentos de la fase de definición
 GymKeep/    Código del sistema: backend (app/), panel web (frontend/), base de datos y pruebas
+GymKeep/raspberry-pi/  Instalación y configuración en una Raspberry Pi 5 (8 GB)
 ```
 
 Para instalar y ejecutar el sistema, ver [`GymKeep/README.md`](GymKeep/README.md) y
