@@ -2,16 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { api } from '../api/client.js'
 import { reducirFoto } from '../utils/imagen.js'
+import { OPCIONES_USO, datosDeUso } from '../utils/usoReporte.js'
 
 const CATEGORIAS = [
   { clave: 'mecanica', etiqueta: 'Mecánica', ayuda: 'Piezas, ruidos, desgaste' },
   { clave: 'electrica', etiqueta: 'Eléctrica', ayuda: 'No enciende, pantalla, cables' },
   { clave: 'otro', etiqueta: 'Otro', ayuda: 'No estoy seguro' },
-]
-
-const GRAVEDADES = [
-  { valor: 'leve', etiqueta: 'Leve', ayuda: 'Se puede seguir usando con cuidado' },
-  { valor: 'grave', etiqueta: 'Grave', ayuda: 'Mejor que nadie la use así' },
 ]
 
 export default function Reportar() {
@@ -25,8 +21,7 @@ export default function Reportar() {
   const [categoria, setCategoria] = useState(null)
   const [tipoFallaSeleccionado, setTipoFallaSeleccionado] = useState(null)
   const [descripcionLibre, setDescripcionLibre] = useState('') // solo para categoria "otro"
-  const [gravedad, setGravedad] = useState(null)
-  const [funcional, setFuncional] = useState(null) // true | false | null (sin responder)
+  const [uso, setUso] = useState(null) // 'funciona' | 'riesgo' | 'detenida' | null (sin responder)
   const [foto, setFoto] = useState(null) // { base64, vistaPrevia } | null (opcional)
   const [errorFoto, setErrorFoto] = useState(null)
   const [procesandoFoto, setProcesandoFoto] = useState(false)
@@ -92,7 +87,7 @@ export default function Reportar() {
   // completa escribiendo la descripcion (el tipo de falla ya quedo fijo en elegirCategoria).
   const pasoDosCompleto = esCategoriaOtro ? Boolean(descripcionLibre.trim()) : Boolean(tipoFallaSeleccionado)
 
-  const listo = Boolean(categoria && pasoDosCompleto && gravedad && funcional !== null && nombre.trim())
+  const listo = Boolean(categoria && pasoDosCompleto && uso && nombre.trim())
 
   async function elegirFoto(evento) {
     const archivo = evento.target.files?.[0]
@@ -113,6 +108,7 @@ export default function Reportar() {
   async function manejarEnvio(evento) {
     evento.preventDefault()
     if (!listo) return
+    const { gravedad, funcional } = datosDeUso(uso)
 
     setEnviando(true)
     setErrorEnvio(null)
@@ -138,8 +134,7 @@ export default function Reportar() {
     setCategoria(null)
     setTipoFallaSeleccionado(null)
     setDescripcionLibre('')
-    setGravedad(null)
-    setFuncional(null)
+    setUso(null)
     setNombre('')
     setFoto(null)
     setErrorFoto(null)
@@ -184,8 +179,8 @@ export default function Reportar() {
               <p className="text-brand-600 font-semibold text-lg">¡Gracias por tu reporte!</p>
               <p className="text-sm text-slate-500">
                 Registramos la falla en <strong>{equipo.nombre}</strong>.{' '}
-                {funcional === false
-                  ? 'Marcamos el equipo como fuera de servicio para que nadie más lo use mientras se revisa.'
+                {uso === 'detenida'
+                  ? 'Lo marcamos como urgente para que el equipo de mantenimiento lo revise. Si otra persona confirma la falla, quedará fuera de servicio.'
                   : 'El equipo de mantenimiento la revisará pronto.'}
               </p>
               <button
@@ -272,76 +267,46 @@ export default function Reportar() {
                 </div>
               )}
 
-              {/* Paso 3: gravedad */}
+              {/* Paso 3: se puede seguir usando (una sola respuesta; define la prioridad) */}
               {pasoDosCompleto && (
                 <div>
-                  <p className="text-sm font-medium text-slate-700 mb-2">3. ¿Qué tan grave es?</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {GRAVEDADES.map((g) => {
-                      const seleccionado = gravedad === g.valor
+                  <p className="text-sm font-medium text-slate-700 mb-2">3. ¿Se puede seguir usando la máquina?</p>
+                  <div className="grid gap-2">
+                    {OPCIONES_USO.map((o) => {
+                      const seleccionado = uso === o.valor
+                      const detenida = o.valor === 'detenida'
                       return (
                         <button
                           type="button"
-                          key={g.valor}
-                          onClick={() => setGravedad(g.valor)}
-                          className={`px-3 py-3 rounded-lg text-sm font-medium border-2 transition-colors ${
+                          key={o.valor}
+                          onClick={() => setUso(o.valor)}
+                          className={`px-3 py-3 rounded-lg text-sm font-medium border-2 text-left transition-colors ${
                             seleccionado
-                              ? 'border-brand-600 bg-brand-50 text-brand-700'
+                              ? detenida
+                                ? 'border-red-600 bg-red-50 text-red-700'
+                                : 'border-brand-600 bg-brand-50 text-brand-700'
                               : 'border-slate-200 text-slate-600 hover:border-slate-300'
                           }`}
                         >
-                          <span className="block font-semibold">{g.etiqueta}</span>
-                          <span className="block text-[10px] text-slate-400 mt-0.5">{g.ayuda}</span>
+                          <span className="block font-semibold">{o.etiqueta}</span>
+                          <span className="block text-[11px] text-slate-400 mt-0.5">{o.ayuda}</span>
                         </button>
                       )
                     })}
                   </div>
-                </div>
-              )}
-
-              {/* Paso 4: sigue funcionando */}
-              {gravedad && (
-                <div>
-                  <p className="text-sm font-medium text-slate-700 mb-2">
-                    4. ¿La máquina todavía se puede usar?
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setFuncional(true)}
-                      className={`px-3 py-3 rounded-lg text-sm font-medium border-2 transition-colors ${
-                        funcional === true
-                          ? 'border-brand-600 bg-brand-50 text-brand-700'
-                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                      }`}
-                    >
-                      Sí, funciona
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFuncional(false)}
-                      className={`px-3 py-3 rounded-lg text-sm font-medium border-2 transition-colors ${
-                        funcional === false
-                          ? 'border-red-600 bg-red-50 text-red-700'
-                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                      }`}
-                    >
-                      No, está detenida
-                    </button>
-                  </div>
-                  {funcional === false && (
+                  {uso === 'detenida' && (
                     <p className="text-xs text-red-600 mt-2">
-                      La marcaremos como fuera de servicio para que nadie más la use.
+                      La marcaremos como urgente; si otra persona confirma la falla, quedará fuera de servicio.
                     </p>
                   )}
                 </div>
               )}
 
-              {/* Paso 5: foto del dano o la falla (OPCIONAL, va antes del nombre) */}
-              {funcional !== null && (
+              {/* Paso 4: foto del dano o la falla (OPCIONAL, va antes del nombre) */}
+              {uso !== null && (
                 <div>
                   <p className="text-sm font-medium text-slate-700 mb-1">
-                    5. Foto del daño o la falla <span className="font-normal text-slate-400">(opcional)</span>
+                    4. Foto del daño o la falla <span className="font-normal text-slate-400">(opcional)</span>
                   </p>
                   {foto ? (
                     <div className="relative">
@@ -380,10 +345,10 @@ export default function Reportar() {
                 </div>
               )}
 
-              {/* Paso 6: nombre (unico campo de texto libre obligatorio ademas de la descripcion de "otro") */}
-              {funcional !== null && (
+              {/* Paso 5: nombre (unico campo de texto libre obligatorio ademas de la descripcion de "otro") */}
+              {uso !== null && (
                 <div>
-                  <label className="text-sm font-medium text-slate-700 block mb-1">6. Tu nombre</label>
+                  <label className="text-sm font-medium text-slate-700 block mb-1">5. Tu nombre</label>
                   <input
                     type="text"
                     value={nombre}

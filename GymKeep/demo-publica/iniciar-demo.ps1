@@ -4,8 +4,11 @@
 #                 copiar-datos-reales.bat; se activa solo si existe el archivo .datos-reales)
 #   -Camaras      agrega el modulo de vision: analiza un video de ..\vision\datos como camara en vivo
 #   -Video        nombre del video (si no, pregunta cual); -Camara codigo de la camara (CAM-01)
+#                 Con -Camaras y SIN -Video: si estan los 3 videos de la medicion en ..\vision\datos
+#                 (cctv_cintas.mp4, gym_fijo_1080.mp4.mp4 y gym_completo_tramoA.mp4) se levantan 3
+#                 camaras, una por video, cada una con sus zonas y parametros. -UnaCamara fuerza una sola.
 # Requisitos: Docker Desktop abierto y Tailscale instalado con la sesion iniciada.
-param([switch]$SinDatosDemo, [switch]$SinSimulacion, [switch]$DatosReales, [switch]$Camaras, [string]$Video = '', [string]$Camara = 'CAM-01')
+param([switch]$SinDatosDemo, [switch]$SinSimulacion, [switch]$DatosReales, [switch]$Camaras, [switch]$UnaCamara, [string]$Video = '', [string]$Camara = 'CAM-01')
 
 $ErrorActionPreference = 'Continue'
 Set-Location $PSScriptRoot
@@ -15,6 +18,7 @@ $Puerto = if ($env:DEMO_PORT) { $env:DEMO_PORT } else { '8088' }
 $Compose = Join-Path $PSScriptRoot 'docker-compose.yml'
 if ($Camaras) { $Compose = Join-Path $PSScriptRoot 'docker-compose.vision.yml' }
 $MarcaReales = Join-Path $PSScriptRoot '.datos-reales'
+$Tres = $false   # 3 camaras (una por video de la medicion); se decide en el paso 2b
 if ($DatosReales -or (Test-Path $MarcaReales)) {
     # Datos reales copiados a la demo: NUNCA cargar datos de ejemplo ni simular uso (borraria sesiones reales).
     $DatosReales = $true; $SinDatosDemo = $true; $SinSimulacion = $true
@@ -25,7 +29,7 @@ $PgDb = if ($env:POSTGRES_DB) { $env:POSTGRES_DB } else { 'gymkeep' }
 
 function Paso($m) { Write-Host "`n==> $m" -ForegroundColor Cyan }
 function Fallo($m) { Write-Host "`n[X] $m" -ForegroundColor Red; exit 1 }
-function DC { & docker compose -f $Compose @args }
+function DC { if ($Tres) { & docker compose -f $Compose --profile tres @args } else { & docker compose -f $Compose @args } }
 
 # ---- 1. Docker ----
 Paso 'Revisando Docker'
@@ -70,7 +74,22 @@ if ($Camaras) {
         Sort-Object LastWriteTime -Descending)
     if ($videos.Count -eq 0) { Fallo "No hay videos en $DatosVideo . Copia ahi tu video (mp4, mov, avi, mkv) y vuelve a ejecutar." }
     $elegido = $null
-    if ($Video) {
+    # Los 3 videos de la medicion de vision: cada uno con su camara, sus zonas y sus parametros.
+    $Demo3 = 'cctv_cintas.mp4', 'gym_fijo_1080.mp4.mp4', 'gym_completo_tramoA.mp4'
+    $faltan = @($Demo3 | Where-Object { -not (Test-Path (Join-Path $DatosVideo $_)) })
+    if (-not $Video -and -not $UnaCamara) {
+        if ($faltan.Count -eq 0) { $Tres = $true }
+        else { Write-Host "    No estan los 3 videos de la medicion (faltan: $($faltan -join ', ')); se usa una sola camara." -ForegroundColor Yellow }
+    }
+    if ($Tres) {
+        $Camara = 'CAM-CCTV-01'
+        $env:VISION_FUENTE = '/app/datos/cctv_cintas.mp4'
+        $env:VISION_CAMARA = $Camara
+        $env:VISION_ZONAS = '/app/config/zonas_video1_cctv.json'
+        $env:VISION_CONFIG = '/app/config/video1.yaml'
+        $env:VISION_OPCIONES = '--tiempo-real --repetir --imgsz 640 --intervalo 1.0'
+        Write-Host '    3 camaras: CAM-CCTV-01 (cctv_cintas.mp4), CAM-GYM-01 (gym_fijo_1080.mp4.mp4) y CAM-GYM-02 (gym_completo_tramoA.mp4)'
+    } elseif ($Video) {
         $elegido = $videos | Where-Object { $_.Name -ieq $Video } | Select-Object -First 1
         if (-not $elegido) { Fallo "No encuentro '$Video' en $DatosVideo ." }
     } elseif ($videos.Count -eq 1) {
@@ -87,9 +106,11 @@ if ($Camaras) {
         if ($n -lt 1 -or $n -gt $videos.Count) { Fallo 'Numero de video no valido.' }
         $elegido = $videos[$n - 1]
     }
-    Write-Host "    Video: $($elegido.Name)   Camara: $Camara"
-    $env:VISION_FUENTE = "/app/datos/$($elegido.Name)"
-    $env:VISION_CAMARA = $Camara
+    if (-not $Tres) {
+        Write-Host "    Video: $($elegido.Name)   Camara: $Camara"
+        $env:VISION_FUENTE = "/app/datos/$($elegido.Name)"
+        $env:VISION_CAMARA = $Camara
+    }
     # La demo esta en internet: todo el panel pide login y el pipeline entra con una clave al azar.
     if (-not $env:VISION_PIPELINE_KEY) {
         $bytes = New-Object byte[] 16
@@ -116,7 +137,7 @@ for ($i = 0; $i -lt 90; $i++) {
 }
 if (-not $listo) { Fallo "El sistema no respondio en 3 minutos. Mira los registros con:  docker compose -f `"$Compose`" logs --tail 50" }
 
-if ($Camaras) {
+if ($Camaras -and -not $Tres) {
     $codigos = @((DC exec -T db psql -U $PgUser -d $PgDb -tAc 'select codigo from camaras order by id') | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
     if ($codigos -notcontains $Camara) {
         if ($codigos.Count -eq 1) {
@@ -182,7 +203,12 @@ Write-Host '   El panel pide RUN y clave. Si aun no tienes cuenta, ejecuta crear
 if ($Camaras) {
     Write-Host "   Camaras:                       $UrlPublica/camaras"
     Write-Host '   La primera vez el pipeline tarda 1-2 minutos en mostrar la imagen. Si no aparece:'
-    Write-Host "     docker compose -f `"$Compose`" logs --tail 30 vision"
+    if ($Tres) {
+        Write-Host "     docker compose -f `"$Compose`" --profile tres logs --tail 30 vision vision-cam2 vision-cam3"
+        Write-Host '   Tres camaras analizan en paralelo: si el equipo va lento, cierra otras aplicaciones o usa -UnaCamara.'
+    } else {
+        Write-Host "     docker compose -f `"$Compose`" logs --tail 30 vision"
+    }
 }
 if ($DatosReales) { Write-Host '   (Datos REALES: cualquiera con el enlace puede verlos y editarlos; apaga al terminar)' -ForegroundColor Yellow }
 Write-Host ' Para apagar todo: detener-demo.bat'

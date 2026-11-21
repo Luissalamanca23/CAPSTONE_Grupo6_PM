@@ -1,0 +1,11 @@
+Corrida: salida\video3_tramoA  |  video: gym_completo_tramoA.mp4  |  T_on 30 s, T_off 90 s
+
+Reglas: 2 de 2 sesiones cumplen las tres comprobaciones
+
+maquina                   real (s)  medido (s)  error (s)  error %    IoU
+Remo sentado                 428.8       445.4      +16.6      3.9   0.96
+Banco ajustable              402.0       414.8      +12.8      3.2   0.96
+TOTAL                        830.8       860.2      +29.4      3.5
+
+Error total del tiempo de uso: 3.5 %  (meta < 10 %)  ->  CUMPLE
+Error estricto (suma de errores absolutos por maquina): 3.5 %

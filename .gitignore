@@ -42,3 +42,10 @@ GymKeep/demo-publica/.datos-reales
 # Registro del ultimo arranque de la demo
 GymKeep/demo-publica/ultimo-arranque.log
 GymKeep/demo-publica/_to_delete/
+
+# Carpeta de revision antes de borrar definitivamente (archivos duplicados u obsoletos)
+_to_delete/
+
+Claude outputs/
+GymKeep/respaldo_antes_del_caf.sql
+GymKeep/respaldo_demo_antes_del_caf.sql

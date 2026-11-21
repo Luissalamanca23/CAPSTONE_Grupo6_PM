@@ -136,3 +136,24 @@ def test_incidencia_con_tipo_falla_inexistente_devuelve_404(client, sucursal_id)
         json={"equipo_id": equipo["id"], "tipo_falla_codigo": "NO_EXISTE"},
     )
     assert respuesta.status_code == 404
+
+
+def test_listar_incidencias_filtrando_por_sucursal(client, sucursal_id):
+    """DEF-01: el filtro sucursal_id del listado antes se ignoraba."""
+    empresa_id = client.get("/api/v1/empresas/").json()[0]["id"]
+    otra = client.post("/api/v1/sucursales/", json={"empresa_id": empresa_id, "codigo": "PM-02", "nombre": "Otra"}).json()
+    eq_a = _crear_equipo(client, sucursal_id, "EQ-0500")
+    eq_b = _crear_equipo(client, otra["id"], "EQ-0501")
+    for equipo in (eq_a, eq_b):
+        client.post(
+            "/api/v1/incidencias/",
+            json={"equipo_id": equipo["id"], "tipo_falla_codigo": "SONIDO_EXTRANO"},
+        )
+    todas = client.get("/api/v1/incidencias/")
+    assert len(todas.json()) == 2
+    de_a = client.get("/api/v1/incidencias/", params={"sucursal_id": sucursal_id})
+    assert [i["equipo_id"] for i in de_a.json()] == [eq_a["id"]]
+    assert de_a.headers["X-Total-Count"] == "1"
+    de_b = client.get("/api/v1/incidencias/", params={"sucursal_id": otra["id"]})
+    assert [i["equipo_id"] for i in de_b.json()] == [eq_b["id"]]
+    assert client.get("/api/v1/incidencias/", params={"sucursal_id": 99999}).json() == []

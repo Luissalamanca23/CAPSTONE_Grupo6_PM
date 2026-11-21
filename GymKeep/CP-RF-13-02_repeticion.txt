@@ -1,0 +1,18 @@
+CP-RF-13-02 repetido el 20-11-2026 19:35 contra http://127.0.0.1:8088 (solo lectura)
+
+Total de incidencias sin filtros: 21
+Sucursal inexistente (sucursal_id=999999):
+  [OK]    devolvio 0 incidencias (esperado: 0), X-Total-Count=0
+Por sucursal existente:
+  sucursal 3 (01): 21 incidencias
+  [OK]    la suma por sucursal (21) coincide con el total (21)
+Filtro por equipo (equipo_id=57):
+  [OK]    2 incidencias, todas del equipo 57
+Filtro por prioridad (baja):
+  [OK]    12 incidencias, todas con prioridad baja
+Filtro por prioridad (media):
+  [OK]    1 incidencias, todas con prioridad media
+Filtro por prioridad (urgente):
+  [OK]    8 incidencias, todas con prioridad urgente
+
+RESULTADO: APROBADO: los filtros devuelven solo lo que corresponde (DEF-01 corregido).

@@ -32,6 +32,7 @@ def _query_incidencias_filtrada(
     *,
     estado: Optional[EstadoIncidencia] = None,
     equipo_id: Optional[int] = None,
+    sucursal_id: Optional[int] = None,
     categoria: Optional[str] = None,
     prioridad: Optional[PrioridadIncidencia] = None,
     fecha_desde: Optional[date] = None,
@@ -39,7 +40,7 @@ def _query_incidencias_filtrada(
     q: Optional[str] = None,
 ):
     """Arma el query base con todos los filtros del historial de incidencias (panel de
-    tecnicos): estado, equipo, categoria del tipo de falla, prioridad, rango de fechas y
+    tecnicos): estado, equipo, sucursal, categoria del tipo de falla, prioridad, rango de fechas y
     texto libre. Se comparte entre `list_incidencias` (trae la pagina) y
     `count_incidencias` (total real, ignorando skip/limit) para que la paginacion del
     frontend sepa cuantas paginas hay sin traer todos los registros de una vez."""
@@ -48,7 +49,7 @@ def _query_incidencias_filtrada(
     # Los joins solo se agregan si algun filtro realmente los necesita, para no duplicar
     # el join a la misma tabla si mas de un filtro la usa.
     necesita_tipo_falla = categoria is not None or bool(q)
-    necesita_equipo = bool(q)
+    necesita_equipo = bool(q) or sucursal_id is not None
 
     if necesita_tipo_falla:
         query = query.join(TipoFalla, Incidencia.tipo_falla_id == TipoFalla.id)
@@ -59,6 +60,9 @@ def _query_incidencias_filtrada(
         query = query.filter(Incidencia.estado == estado)
     if equipo_id is not None:
         query = query.filter(Incidencia.equipo_id == equipo_id)
+    if sucursal_id is not None:
+        # La sucursal es del equipo: la incidencia no la guarda por separado.
+        query = query.filter(Equipo.sucursal_id == sucursal_id)
     if prioridad is not None:
         query = query.filter(Incidencia.prioridad == prioridad)
     if categoria is not None:

@@ -146,7 +146,7 @@ def cmd_zonas(args) -> int:
         cliente.headers["X-Vision-Pin"] = pin
     preset.esperar_api(cliente, args.esperar_api)
     datos = preset.leer_preset(Path(args.preset))
-    camara = vivo.buscar_camara(cliente, args.camara or datos["camara"])
+    camara = preset.asegurar_camara(cliente, args.camara or datos["camara"], datos)
     aplicadas = preset.aplicar(cliente, camara, datos, crear_equipos=not args.sin_crear)
     if marca is not None and aplicadas:
         marca.parent.mkdir(parents=True, exist_ok=True)

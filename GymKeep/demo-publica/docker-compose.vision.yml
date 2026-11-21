@@ -1,54 +1,106 @@
 # Demo publica CON camaras: lo mismo que docker-compose.yml (base de datos, API y web en el puerto
-# 8088) mas el pipeline de vision, que analiza un video de vision/datos/ como si fuera una camara
-# en vivo y lo deja en el panel (/camaras). Lo levanta iniciar-demo.ps1 con -Camaras.
-# A mano: VISION_FUENTE=/app/datos/mi_video.mp4 docker compose -f demo-publica/docker-compose.vision.yml up -d --build
-# No aplica zonas iniciales (VISION_ZONAS vacio): las zonas se dibujan en el panel.
+# 8088) mas el pipeline de vision, que analiza videos de vision/datos/ como si fueran camaras en
+# vivo y los deja en el panel (/camaras). Lo levanta iniciar-demo.ps1 con -Camaras.
+#
+# - Una camara (por defecto): el servicio `vision`, con el video que se elija.
+#     A mano: VISION_FUENTE=/app/datos/mi_video.mp4 docker compose -f demo-publica/docker-compose.vision.yml up -d --build
+# - Tres camaras (perfil `tres`): ademas `vision-cam2` y `vision-cam3`. Cada una analiza uno de
+#   los 3 videos de la medicion de vision con SUS zonas y SUS parametros (vision/config/zonas_video*.json,
+#   que se aplican a la camara al arrancar) y su modelo (vision/config/video*.yaml). Lo levanta
+#   iniciar-demo-real.bat cuando estan los 3 videos en vision/datos.
+#     A mano: docker compose -f demo-publica/docker-compose.vision.yml --profile tres up -d --build
+#
+# Sin VISION_ZONAS no se aplican zonas iniciales: las zonas se dibujan en el panel.
 name: gymkeep-demo
 
 include:
   - docker-compose.yml
 
+x-vision: &vision
+  build: ../vision
+  image: gymkeep-vision
+  restart: unless-stopped
+  # Ctrl+C (SIGINT): el pipeline cierra las sesiones abiertas antes de salir.
+  stop_signal: SIGINT
+  # Tope de CPU por camara: sin tope, 3 camaras en paralelo usaban casi toda la CPU y el panel iba lento.
+  # Se puede subir con VISION_CPUS (por ejemplo 3) si el equipo tiene de sobra.
+  cpus: ${VISION_CPUS:-2}
+  # `api` arranca primero; ademas el contenedor espera a que responda (--esperar-api) y, si
+  # algo falla, Docker lo reinicia (restart).
+  depends_on:
+    - api
+  entrypoint: ["sh", "-c"]
+  # 1) Si hay VISION_ZONAS, aplica el preset a la camara (la crea si falta; zonas y parametros de
+  #    ese video), una sola vez. 2) Analiza el video. Si hay VISION_CONFIG (YAML), de ahi salen el
+  #    modelo y la privacidad; las zonas y los parametros salen de la plataforma (de la camara).
+  command:
+    - >-
+      case "$$VISION_FUENTE" in rtsp://*|rtsps://*|http://*|https://*) ;;
+      *) if [ ! -f "$$VISION_FUENTE" ]; then
+      echo "No existe el video $$VISION_FUENTE dentro del contenedor. Los videos van en vision/datos/ (no se suben a git) y se ven como /app/datos/<archivo>.";
+      sleep 30; exit 1; fi ;; esac;
+      if [ -n "$$VISION_ZONAS" ]; then
+      python -m gymkeep_vision zonas "$$VISION_ZONAS" --api "$$VISION_API" --camara "$$VISION_CAMARA"
+      --esperar-api 180 --marca "/app/salida/zonas_$$VISION_CAMARA.aplicadas" || echo "No se pudieron aplicar las zonas iniciales (se pueden dibujar en el panel)";
+      fi;
+      exec python -m gymkeep_vision procesar "$$VISION_FUENTE" --api "$$VISION_API"
+      --camara "$$VISION_CAMARA" $${VISION_CONFIG:+-c "$$VISION_CONFIG"} --esperar-api 180 --cuadro-cada "$$VISION_CUADRO_CADA_S"
+      --sin-video --inicio "$$(date -Iseconds)" -o "/app/salida/vivo_$$VISION_CAMARA" $$VISION_OPCIONES
+  volumes:
+    - ../vision/datos:/app/datos:ro
+    - ../vision/config:/app/config:ro
+    # Pesos del modelo (yolo26s.pt, el de la medicion) y detector de rostros: se comparten entre camaras.
+    - ../vision/modelos:/app/modelos
+    - vision_salida:/app/salida
+
+x-vision-entorno: &vision-entorno
+  TZ: America/Santiago
+  # Hilos de calculo del modelo por camara (junto con el tope de CPU de arriba).
+  OMP_NUM_THREADS: ${VISION_HILOS:-2}
+  MKL_NUM_THREADS: ${VISION_HILOS:-2}
+  YOLO_CONFIG_DIR: /tmp/Ultralytics
+  VISION_API: ${VISION_API:-http://api:8000}
+  VISION_CUADRO_CADA_S: ${VISION_CUADRO_CADA_S:-1}
+  VISION_PIPELINE_KEY: ${VISION_PIPELINE_KEY:-gymkeep-pipeline-local}
+  VISION_PIN: ${VISION_PIN:-}
+
 services:
   vision:
-    build: ../vision
-    image: gymkeep-vision
+    <<: *vision
     container_name: gymkeep_vision
-    restart: unless-stopped
-    # Ctrl+C (SIGINT): el pipeline cierra las sesiones abiertas antes de salir.
-    stop_signal: SIGINT
-    # `api` arranca primero; ademas el contenedor espera a que responda (--esperar-api) y, si
-    # algo falla, Docker lo reinicia (restart).
-    depends_on:
-      - api
     environment:
-      TZ: America/Santiago
-      YOLO_CONFIG_DIR: /tmp/Ultralytics
-      VISION_API: ${VISION_API:-http://api:8000}
+      <<: *vision-entorno
       VISION_CAMARA: ${VISION_CAMARA:-CAM-01}
       VISION_FUENTE: ${VISION_FUENTE:-/app/datos/cctv_cintas.mp4}
       VISION_OPCIONES: ${VISION_OPCIONES:---tiempo-real --repetir}
       VISION_ZONAS: ${VISION_ZONAS-}
-      VISION_CUADRO_CADA_S: ${VISION_CUADRO_CADA_S:-1}
-      VISION_PIPELINE_KEY: ${VISION_PIPELINE_KEY:-gymkeep-pipeline-local}
-      VISION_PIN: ${VISION_PIN:-}
-    entrypoint: ["sh", "-c"]
-    command:
-      - >-
-        case "$$VISION_FUENTE" in rtsp://*|rtsps://*|http://*|https://*) ;;
-        *) if [ ! -f "$$VISION_FUENTE" ]; then
-        echo "No existe el video $$VISION_FUENTE dentro del contenedor. Los videos van en vision/datos/ (no se suben a git) y se ven como /app/datos/<archivo>.";
-        sleep 30; exit 1; fi ;; esac;
-        if [ -n "$$VISION_ZONAS" ]; then
-        python -m gymkeep_vision zonas "$$VISION_ZONAS" --api "$$VISION_API" --camara "$$VISION_CAMARA"
-        --esperar-api 180 --marca "/app/salida/zonas_$$VISION_CAMARA.aplicadas" || echo "No se pudieron aplicar las zonas iniciales (se pueden dibujar en el panel)";
-        fi;
-        exec python -m gymkeep_vision procesar "$$VISION_FUENTE" --api "$$VISION_API"
-        --camara "$$VISION_CAMARA" --esperar-api 180 --cuadro-cada "$$VISION_CUADRO_CADA_S"
-        --sin-video --inicio "$$(date -Iseconds)" -o /app/salida/vivo $$VISION_OPCIONES
-    volumes:
-      - ../vision/datos:/app/datos:ro
-      - ../vision/config:/app/config:ro
-      - vision_salida:/app/salida
+      VISION_CONFIG: ${VISION_CONFIG-}
+
+  # Video 2 (gimnasio, camara fija a la altura del pecho): remo sentado y maquina amarilla.
+  vision-cam2:
+    <<: *vision
+    container_name: gymkeep_vision_cam2
+    profiles: ["tres"]
+    environment:
+      <<: *vision-entorno
+      VISION_CAMARA: ${VISION_CAMARA_2:-CAM-GYM-01}
+      VISION_FUENTE: ${VISION_FUENTE_2:-/app/datos/gym_fijo_1080.mp4.mp4}
+      VISION_OPCIONES: ${VISION_OPCIONES_2:---tiempo-real --repetir --imgsz 640 --intervalo 1.0}
+      VISION_ZONAS: ${VISION_ZONAS_2:-/app/config/zonas_video2_gym.json}
+      VISION_CONFIG: ${VISION_CONFIG_2:-/app/config/video2.yaml}
+
+  # Video 3 (otro tramo de la misma grabacion): remo sentado y banco ajustable.
+  vision-cam3:
+    <<: *vision
+    container_name: gymkeep_vision_cam3
+    profiles: ["tres"]
+    environment:
+      <<: *vision-entorno
+      VISION_CAMARA: ${VISION_CAMARA_3:-CAM-GYM-02}
+      VISION_FUENTE: ${VISION_FUENTE_3:-/app/datos/gym_completo_tramoA.mp4}
+      VISION_OPCIONES: ${VISION_OPCIONES_3:---tiempo-real --repetir --imgsz 640 --intervalo 1.0}
+      VISION_ZONAS: ${VISION_ZONAS_3:-/app/config/zonas_video3_tramoA.json}
+      VISION_CONFIG: ${VISION_CONFIG_3:-/app/config/video3.yaml}
 
 volumes:
   vision_salida:

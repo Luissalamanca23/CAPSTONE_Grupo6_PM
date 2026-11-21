@@ -38,12 +38,21 @@ terminar. No incluye el modulo de vision (camaras).
    (`gymkeep-demo_*`). Los datos originales no se tocan. Al terminar crea `.datos-reales`: mientras
    exista, la demo NO carga datos de ejemplo ni simula uso (eso borraria sesiones reales).
 2. Copia tu video a `GymKeep\vision\datos\` (mp4, mov, avi, mkv). No se sube a git.
-3. `iniciar-demo-real.bat`: levanta todo con camaras, pregunta que video usar (o
-   `iniciar-demo-real.bat -Video mi_video.mp4 -Camara CAM-01`) y publica. El video se analiza en
-   bucle como si fuera una camara en vivo: **<direccion>/camaras**. Dibuja las zonas de las
-   maquinas en el panel (Camaras > tu camara > Dibujar zona). Todo el panel pide inicio de sesion
-   (RUN + clave numerica): antes de entrar crea tu cuenta con `..\crear-admin.bat`. Solo el
-   formulario del QR de cada maquina queda abierto al publico.
+3. `iniciar-demo-real.bat`: levanta todo con camaras y publica. Si en `vision\datos` estan los 3
+   videos de la medicion de vision (`cctv_cintas.mp4`, `gym_fijo_1080.mp4.mp4` y
+   `gym_completo_tramoA.mp4`), levanta **3 camaras**, una por video, cada una con sus zonas y sus
+   parametros (los de la medicion contra el conteo manual: `vision\config\zonas_video*.json` y
+   `video*.yaml`). Las camaras (CAM-CCTV-01, CAM-GYM-01 y CAM-GYM-02) y sus maquinas se crean solas
+   la primera vez, en la sucursal PM-01 (o en la unica sucursal que haya). Si faltan videos, o con
+   `-UnaCamara`, o con `-Video mi_video.mp4 -Camara CAM-01`, usa una sola camara y pregunta cual
+   video. Los videos se analizan en bucle como si fueran camaras en vivo: **<direccion>/camaras**.
+   Las zonas se pueden retocar en el panel (Camaras > tu camara > Dibujar zona). Todo el panel pide
+   inicio de sesion (RUN + clave numerica): antes de entrar crea tu cuenta con `..\crear-admin.bat`.
+   Solo el formulario del QR de cada maquina queda abierto al publico.
+   Tres camaras analizan en paralelo, en CPU y con menos carga que la medicion (imagen de 640 px, un
+   analisis por segundo en vez de cada 0,2 s y un tope de 2 CPU por camara; se puede cambiar con
+   `VISION_CPUS` y `VISION_HILOS`): si el equipo va lento, cierra otras aplicaciones o usa
+   `-UnaCamara`. Son videos grabados, no camaras instaladas en un gimnasio.
 4. Para cambiar de video: copia el nuevo y vuelve a ejecutar `iniciar-demo-real.bat`.
 5. Volver a la demo de ejemplo: `detener-demo.bat -BorrarDatos` y luego `iniciar-demo.bat`.
    Volver a trabajar en local con los datos reales: `..\volver-a-datos-reales.bat`.
