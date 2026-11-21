@@ -1,0 +1,58 @@
+# Camara CCTV real (fija, elevada, 352x240) sobre una fila de trotadoras.
+# Video de prueba: "Denise falls at the gym Camera 2!" (YouTube TqFmJZXIwIk), 35:35 de archivo.
+# Descarga: ver README.md (seccion "Videos de prueba").
+
+camara:
+  codigo: CAM-CCTV-01
+  nombre: CCTV zona cardio (demo)
+  sucursal_codigo: PM-01      # sucursal de postgres/seed.sql
+  zona_nombre: Cardio
+
+modelo:
+  pesos: yolo26s.pt
+  nombre: gymkeep-usage-detector
+  version: 0.1.0
+  imgsz: 1280                 # la imagen es chica: YOLO la amplia y ve mejor a personas de ~30 px
+
+# El grabador exporto este video acelerado: el reloj impreso en la imagen avanza 30:00
+# (10:17:25 -> 10:47:25) mientras el archivo dura 35:34 -> 1800 / 2134 = 0.843.
+escala_tiempo: 0.843
+
+parametros:
+  t_on_s: 30                  # MP-45
+  t_off_s: 90                 # MP-46
+  # MP-47 y la gracia se calibraron para ESTA camara con el comando `recalibrar` contra la
+  # verdad anotada a mano (validacion/cctv_cintas_verdad.csv). Con 352x240 y las piernas
+  # tapadas por la consola, YOLO casi nunca supera 0.50: con el valor inicial del estudio
+  # (0.50, gracia 2 s) la Trotadora 03 no registra ninguna sesion y el error de uso es 70 %.
+  # Con 0.25 y gracia 10 s, las Trotadoras 02, 03 y 04 calzan con la verdad (IoU 1.00).
+  confianza_min: 0.25
+  gracia_s: 10                # la deteccion "parpadea" hasta ~10 s sin que nadie se baje
+  heartbeat_s: 60
+  intervalo_analisis_s: 0.2   # 5 analisis por segundo real
+  criterio_zona: pie          # centro inferior de la caja de la persona
+
+resolucion_referencia: [352, 240]
+
+privacidad:
+  difuminar_personas: true
+
+# ROI en pixeles de la imagen original (352x240). Se dibujaron sobre la zona donde cae el
+# punto de apoyo de quien usa cada maquina (comando: python -m gymkeep_vision cuadro ...).
+maquinas:
+  - nombre: Trotadora 01
+    codigo_activo: EQ-TR-01
+    categoria: CARDIO_MOTOR
+    roi: [[324, 86], [352, 86], [352, 106], [326, 106]]
+  - nombre: Trotadora 02
+    codigo_activo: EQ-TR-02
+    categoria: CARDIO_MOTOR
+    roi: [[293, 78], [321, 78], [323, 101], [295, 101]]
+  - nombre: Trotadora 03
+    codigo_activo: EQ-TR-03
+    categoria: CARDIO_MOTOR
+    roi: [[259, 56], [291, 56], [294, 82], [262, 82]]
+  - nombre: Trotadora 04
+    codigo_activo: EQ-TR-04
+    categoria: CARDIO_MOTOR
+    roi: [[226, 44], [256, 44], [258, 70], [228, 70]]

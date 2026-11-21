@@ -1,0 +1,10 @@
+{
+  "descripcion": "Video 2 (gym_fijo_1080.mp4, 1920x1080 de referencia): remo sentado y maquina amarilla. Mismas zonas y parametros que la medicion (config/video2.yaml); poligonos normalizados 0..1.",
+  "camara": "CAM-GYM-01",
+  "crear_camara": {"nombre": "Sala de musculacion (demo)", "sucursal_codigo": "PM-01", "zona": "Musculacion"},
+  "parametros": {"t_on_s": 30, "t_off_s": 90, "confianza_min": 0.25, "gracia_s": 10, "escala_tiempo": 1.0},
+  "maquinas": [
+    {"codigo_activo": "EQ-RS-01", "nombre": "Remo sentado", "categoria": "placas", "puntos": [[0.237, 0.5185], [0.4427, 0.5046], [0.4557, 0.7222], [0.2448, 0.7315]]},
+    {"codigo_activo": "EQ-MA-01", "nombre": "Maquina amarilla", "categoria": "placas", "puntos": [[0.7656, 0.2963], [0.9323, 0.2963], [0.9349, 0.4167], [0.7656, 0.4167]]}
+  ]
+}

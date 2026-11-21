@@ -1,0 +1,7 @@
+Periodo observado: 2026-09-26T19:00:00-03:00 -> 2026-09-26T19:14:35-03:00 (14:35)
+Hora del primer cuadro tomada de: argumento --inicio
+
+Maquina                  Sesiones  Uso total  Ocupacion  Promedio  Descart.    Uso real    IoU
+Remo sentado                    1      13:18      91.2%     13:18         0       11:52   0.89
+Maquina amarilla                1      14:35     100.0%     14:35         0  sin anotar      -
+

@@ -1,0 +1,62 @@
+{
+  "fuente": "gym_fijo_1080.mp4",
+  "camara": "CAM-GYM-01",
+  "inicio_observado": "2026-09-26T19:00:00-03:00",
+  "fin_observado": "2026-09-26T19:14:35-03:00",
+  "periodo_observado_s": 875.0,
+  "origen_hora_inicio": "argumento --inicio",
+  "interrumpido": false,
+  "modelo": {
+    "pesos": "yolo26s.pt",
+    "tracker": "bytetrack.yaml",
+    "imgsz": 1280
+  },
+  "parametros": {
+    "t_on_s": 30,
+    "t_off_s": 90,
+    "confianza_min": 0.25,
+    "gracia_s": 10,
+    "intervalo_analisis_s": 0.2,
+    "criterio_zona": "pie"
+  },
+  "rendimiento": {
+    "cuadros_analizados": 4376,
+    "ms_por_cuadro": 14.3
+  },
+  "eventos": {
+    "inicio_uso": 2,
+    "uso_en_curso": 26,
+    "fin_uso": 2
+  },
+  "maquinas": [
+    {
+      "maquina": "Remo sentado",
+      "codigo_activo": "EQ-RS-01",
+      "equipo_id": null,
+      "sesiones": 1,
+      "uso_total_s": 797.8,
+      "uso_total": "13:18",
+      "ocupacion_pct": 91.2,
+      "sesion_promedio_s": 797.8,
+      "sesion_mas_larga_s": 797.8,
+      "presencias_descartadas": 0,
+      "validacion": {
+        "uso_real_s": 712.0,
+        "error_s": 85.8,
+        "iou": 0.892
+      }
+    },
+    {
+      "maquina": "Maquina amarilla",
+      "codigo_activo": "EQ-MA-01",
+      "equipo_id": null,
+      "sesiones": 1,
+      "uso_total_s": 875.0,
+      "uso_total": "14:35",
+      "ocupacion_pct": 100.0,
+      "sesion_promedio_s": 875.0,
+      "sesion_mas_larga_s": 875.0,
+      "presencias_descartadas": 0
+    }
+  ]
+}

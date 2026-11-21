@@ -1,0 +1,9 @@
+Periodo observado: 2013-09-06T10:17:25-04:00 -> 2013-09-06T10:47:25-04:00 (30:00)
+Hora del primer cuadro tomada de: argumento --inicio
+
+Maquina                  Sesiones  Uso total  Ocupacion  Promedio  Descart.    Uso real    IoU
+Trotadora 01                    1      06:37      22.0%     06:37        15       25:10   0.26
+Trotadora 02                    1      22:10      73.9%     22:10         0       22:12   1.00
+Trotadora 03                    2      18:29      61.6%     09:15         0       18:33   1.00
+Trotadora 04                    0      00:00       0.0%     00:00         0       00:00   1.00
+

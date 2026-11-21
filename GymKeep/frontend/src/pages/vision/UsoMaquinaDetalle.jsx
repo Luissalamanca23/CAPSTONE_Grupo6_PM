@@ -179,13 +179,13 @@ export default function UsoMaquinaDetalle() {
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-        <div className="flex border-b border-slate-200 overflow-x-auto">
+        <div className="flex border-b border-slate-200 overflow-x-auto overflow-y-hidden">
           {pestanas.map((p) => (
             <button
               key={p.clave}
               type="button"
               onClick={() => setPestana(p.clave)}
-              className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 -mb-px ${
+              className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 ${
                 pestana === p.clave
                   ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-slate-500 hover:text-slate-700'

@@ -1,0 +1,10 @@
+{
+  "descripcion": "Video 3 (gym_completo_tramoA.mp4, 1920x1080): remo sentado y banco ajustable. Mismas zonas y parametros que la medicion (config/video3.yaml); poligonos normalizados 0..1.",
+  "camara": "CAM-GYM-02",
+  "crear_camara": {"nombre": "Sala de musculacion 2 (demo)", "sucursal_codigo": "PM-01", "zona": "Musculacion"},
+  "parametros": {"t_on_s": 30, "t_off_s": 90, "confianza_min": 0.25, "gracia_s": 10, "escala_tiempo": 1.0},
+  "maquinas": [
+    {"codigo_activo": "EQ-RS-02", "nombre": "Remo sentado 2", "categoria": "placas", "puntos": [[0.2708, 0.463], [0.4922, 0.4815], [0.4922, 0.6481], [0.2812, 0.6481]]},
+    {"codigo_activo": "EQ-BA-01", "nombre": "Banco ajustable", "categoria": "bancos_racks", "puntos": [[0.3776, 0.3056], [0.4609, 0.3056], [0.4609, 0.4352], [0.3776, 0.4352]]}
+  ]
+}

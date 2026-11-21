@@ -1,0 +1,101 @@
+{
+  "fuente": "cctv_cintas.mp4",
+  "camara": "CAM-CCTV-01",
+  "inicio_observado": "2013-09-06T10:17:25-04:00",
+  "fin_observado": "2013-09-06T10:47:25-04:00",
+  "periodo_observado_s": 1800.0,
+  "origen_hora_inicio": "argumento --inicio",
+  "interrumpido": false,
+  "modelo": {
+    "pesos": "yolo26s.pt",
+    "tracker": "bytetrack.yaml",
+    "imgsz": 1280
+  },
+  "parametros": {
+    "t_on_s": 30,
+    "t_off_s": 90,
+    "confianza_min": 0.25,
+    "gracia_s": 10,
+    "intervalo_analisis_s": 0.2,
+    "criterio_zona": "pie"
+  },
+  "rendimiento": {
+    "cuadros_analizados": 8898,
+    "ms_por_cuadro": 11.4
+  },
+  "eventos": {
+    "inicio_uso": 4,
+    "uso_en_curso": 42,
+    "fin_uso": 4
+  },
+  "maquinas": [
+    {
+      "maquina": "Trotadora 01",
+      "codigo_activo": "EQ-TR-01",
+      "equipo_id": null,
+      "sesiones": 1,
+      "uso_total_s": 396.7,
+      "uso_total": "06:37",
+      "ocupacion_pct": 22.0,
+      "sesion_promedio_s": 396.7,
+      "sesion_mas_larga_s": 396.7,
+      "presencias_descartadas": 15,
+      "validacion": {
+        "uso_real_s": 1510.0,
+        "error_s": -1113.3,
+        "iou": 0.263
+      }
+    },
+    {
+      "maquina": "Trotadora 02",
+      "codigo_activo": "EQ-TR-02",
+      "equipo_id": null,
+      "sesiones": 1,
+      "uso_total_s": 1330.3,
+      "uso_total": "22:10",
+      "ocupacion_pct": 73.9,
+      "sesion_promedio_s": 1330.3,
+      "sesion_mas_larga_s": 1330.3,
+      "presencias_descartadas": 0,
+      "validacion": {
+        "uso_real_s": 1332.0,
+        "error_s": -1.7,
+        "iou": 0.997
+      }
+    },
+    {
+      "maquina": "Trotadora 03",
+      "codigo_activo": "EQ-TR-03",
+      "equipo_id": null,
+      "sesiones": 2,
+      "uso_total_s": 1109.3,
+      "uso_total": "18:29",
+      "ocupacion_pct": 61.6,
+      "sesion_promedio_s": 554.7,
+      "sesion_mas_larga_s": 978.0,
+      "presencias_descartadas": 0,
+      "validacion": {
+        "uso_real_s": 1113.0,
+        "error_s": -3.7,
+        "iou": 0.996
+      }
+    },
+    {
+      "maquina": "Trotadora 04",
+      "codigo_activo": "EQ-TR-04",
+      "equipo_id": null,
+      "sesiones": 0,
+      "uso_total_s": 0,
+      "uso_total": "00:00",
+      "ocupacion_pct": 0.0,
+      "sesion_promedio_s": 0.0,
+      "sesion_mas_larga_s": 0.0,
+      "presencias_descartadas": 0,
+      "validacion": {
+        "uso_real_s": 0.0,
+        "error_s": 0.0,
+        "iou": 1.0
+      }
+    }
+  ]
+}

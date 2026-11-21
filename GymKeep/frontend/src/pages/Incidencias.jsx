@@ -16,7 +16,7 @@ const PRIORIDADES = ['baja', 'media', 'alta', 'urgente']
 const CATEGORIAS = ['mecanica', 'electrica', 'otro']
 const POR_PAGINA = 25
 
-const FILTROS_INICIALES = { estado: '', categoria: '', prioridad: '', fecha_desde: '', fecha_hasta: '' }
+const FILTROS_INICIALES = { estado: '', categoria: '', prioridad: '', sucursal_id: '', fecha_desde: '', fecha_hasta: '' }
 
 // yyyy-mm-dd en hora LOCAL (no usar toISOString: convierte a UTC y puede correr el dia).
 function paraInputFecha(fecha) {
@@ -53,9 +53,15 @@ export default function Incidencias() {
   const [pagina, setPagina] = useState(1)
 
   const [filtros, setFiltros] = useState(FILTROS_INICIALES)
+  const [sucursales, setSucursales] = useState([])
   const [presetFecha, setPresetFecha] = useState('todos') // todos | hoy | semana | mes | personalizado
   const [textoBusqueda, setTextoBusqueda] = useState('')
   const [busqueda, setBusqueda] = useState('') // version "debounced" de textoBusqueda
+
+  // El selector de sucursal solo aparece si hay mas de una.
+  useEffect(() => {
+    api.listarSucursales().then(setSucursales).catch(() => setSucursales([]))
+  }, [])
 
   // Espera un momento sin que el usuario escriba antes de disparar la busqueda, para no
   // hacer una peticion por cada letra.
@@ -85,7 +91,7 @@ export default function Incidencias() {
   }
 
   const hayFiltrosActivos =
-    Boolean(filtros.estado || filtros.categoria || filtros.prioridad || filtros.fecha_desde || busqueda)
+    Boolean(filtros.estado || filtros.categoria || filtros.prioridad || filtros.sucursal_id || filtros.fecha_desde || busqueda)
 
   useEffect(() => {
     setCargando(true)
@@ -94,6 +100,7 @@ export default function Incidencias() {
     if (filtros.estado) params.estado = filtros.estado
     if (filtros.categoria) params.categoria = filtros.categoria
     if (filtros.prioridad) params.prioridad = filtros.prioridad
+    if (filtros.sucursal_id) params.sucursal_id = filtros.sucursal_id
     if (filtros.fecha_desde) params.fecha_desde = filtros.fecha_desde
     if (filtros.fecha_hasta) params.fecha_hasta = filtros.fecha_hasta
     if (busqueda) params.q = busqueda
@@ -183,6 +190,20 @@ export default function Incidencias() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {sucursales.length > 1 && (
+            <select
+              value={filtros.sucursal_id}
+              onChange={(e) => cambiarFiltro('sucursal_id', e.target.value)}
+              className="border border-slate-300 rounded-md text-sm px-2.5 py-1.5"
+            >
+              <option value="">Toda sucursal</option>
+              {sucursales.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.nombre}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={filtros.categoria}
             onChange={(e) => cambiarFiltro('categoria', e.target.value)}

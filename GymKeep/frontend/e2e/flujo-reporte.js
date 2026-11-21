@@ -33,9 +33,8 @@ export async function abrirFormulario(page, token) {
 export async function responderEncuesta(page, nombre = 'Prueba E2E') {
   await page.getByRole('button', { name: /Mecánica/ }).click() // 1. tipo de problema
   await page.getByRole('button', { name: 'Desgaste visible' }).click() // 2. que le pasa
-  await page.getByRole('button', { name: /^Leve/ }).click() // 3. gravedad
-  await page.getByRole('button', { name: /Sí, funciona/ }).click() // 4. todavia se puede usar
-  await page.getByPlaceholder('Escribe tu nombre').fill(nombre) // 6. nombre (la foto es opcional)
+  await page.getByRole('button', { name: /Sí, funciona/ }).click() // 3. se puede seguir usando
+  await page.getByPlaceholder('Escribe tu nombre').fill(nombre) // 5. nombre (4. la foto es opcional)
   await page.getByRole('button', { name: 'Enviar reporte' }).click()
 }
 

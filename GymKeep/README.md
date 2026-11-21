@@ -62,20 +62,20 @@ y control de gastos.
 Diseño responsive (menú lateral en escritorio, menú hamburguesa en celular/tablet) con un
 botón flotante de **Ayuda** (preguntas frecuentes) disponible en todas las pantallas.
 
-- **Panel**: resumen (equipos registrados, incidencias pendientes/en proceso, equipos
-  fuera de servicio) y, debajo, lo que interesa al dueño del gimnasio:
-  - **Atención recomendada**: avisos de incidencias urgentes/altas abiertas hace más de
-    48 h, máquinas con 3 o más incidencias en 30 días y máquinas con más de 200 h de uso
-    desde su última mantención (este último aviso usa los datos de las cámaras). Los
-    umbrales están al inicio de `frontend/src/utils/analitica.js`.
-  - **Análisis** con un único filtro de periodo (8 semanas / 6 meses / 12 meses): cifras
-    del periodo comparadas con el anterior (incidencias, tasa de resolución, tiempo medio
-    de resolución, gasto) y gráficos de tendencia de incidencias reportadas vs. resueltas,
-    gasto correctivo vs. preventivo, tipos de falla, categorías de máquina, máquinas con
-    más fallas y más gasto, mapa de calor día × franja horaria, estado de la flota y uso
-    de los últimos 7 días. Cada gráfico tiene un botón **Ver tabla** con los mismos datos.
-  - El monitor de máquinas por zona (con el estado en vivo de las cámaras) y la cola de
-    incidencias sin resolver ordenada por prioridad, ambos paginados.
+- **Acceso**: todo el panel exige iniciar sesion con RUN chileno y clave numerica (4 a 8 digitos),
+  con roles Administrador y Tecnico. La primera cuenta se crea con `crear-admin.bat`; el resto,
+  desde **Usuarios**. Quien escanea el QR de una maquina solo llega al formulario publico de reporte.
+- **Panel**: cuatro pestanas (`?vista=`), para que no se acumule informacion en una sola pantalla:
+  - **Resumen**: cifras clave, **Atencion recomendada** (incidencias urgentes/altas abiertas hace
+    mas de 48 h, maquinas con 3 o mas incidencias en 30 dias y maquinas con mas de 200 h de uso
+    desde su ultima mantencion; umbrales al inicio de `frontend/src/utils/analitica.js`), la cola
+    paginada de incidencias por atender y el estado de la flota.
+  - **Fallas y costos**: filtro de periodo (8 semanas / 6 meses / 12 meses), cifras comparadas con
+    el periodo anterior y graficos de tendencia, gasto, tipos de falla y mapa de calor. Cada grafico
+    tiene un boton **Ver tabla** con los mismos datos.
+  - **Uso y demanda**: uso reciente y demanda por franja horaria (datos de las camaras).
+  - **Maquinas**: estado de cada maquina, filtrable por zona.
+  Los listados largos (uso, camaras, sucursales, usuarios, incidencias) se paginan.
 - **Equipamiento**: alta de equipos (sucursal/zona/categoría), miniatura del QR, semáforo
   de **salud del equipo** (verde/naranjo/rojo/negro según incidencias abiertas y estado),
   cambio de estado, búsqueda por texto y filtro por categoría/estado. Tabla con scroll
@@ -138,9 +138,9 @@ EMPRESA
   (`registros_auditoria`). El módulo de visión por computadora (`vision/`) alimenta
   `sesiones_uso` a través de `POST /eventos-ia/`.
 
-Ver `GymKeep_BDD_Completa/` para el paquete original de diseño de la base de datos
-(documento de referencia; no es lo que corre en producción, eso es
-`postgres/schema.sql`).
+El esquema que corre en producción es `postgres/schema.sql` (con los datos de ejemplo de
+`postgres/seed.sql`); el paquete original de diseño de la base de datos se retiró del
+repositorio porque quedó reemplazado por esos archivos.
 
 ## Stack
 
@@ -197,8 +197,7 @@ GymKeep/
 ├── docker-compose.yml                       # Postgres + Mongo + API (+ MinIO opcional)
 ├── Dockerfile
 ├── requirements.txt
-├── .env.example
-└── GymKeep_BDD_Completa/                    # Paquete original de diseño de la BDD (referencia)
+└── .env.example
 ```
 
 ## Cómo levantarlo
@@ -479,7 +478,7 @@ los modelos sobre SQLite.
   evaluar alternativas a MinIO dado el problema de distribución mencionado arriba.
 - Autenticación para el panel.
 - Configurar Alembic (hoy el esquema se gestiona solo con `postgres/schema.sql`) para versionar cambios de esquema sin tener que resetear la base de
-  datos cada vez (el paquete `GymKeep_BDD_Completa/alembic/` trae un punto de partida).
+  datos cada vez.
 - Soporte real para múltiples sucursales en el frontend, si el proyecto lo llega a
   necesitar.
 - Frontend móvil/PWA dedicado para el escaneo de QR.

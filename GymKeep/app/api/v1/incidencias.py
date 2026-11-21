@@ -120,6 +120,7 @@ def listar_incidencias(
     limit: int = Query(100, ge=1, le=500),
     estado: Optional[EstadoIncidencia] = None,
     equipo_id: Optional[int] = None,
+    sucursal_id: Optional[int] = None,
     categoria: Optional[str] = None,
     prioridad: Optional[PrioridadIncidencia] = None,
     fecha_desde: Optional[date] = None,
@@ -129,7 +130,7 @@ def listar_incidencias(
 ):
     """Lista incidencias del historial (panel de tecnicos), mas recientes primero.
 
-    Filtros opcionales, todos combinables: estado, equipo, categoria del tipo de falla
+    Filtros opcionales, todos combinables: estado, equipo, sucursal del equipo, categoria del tipo de falla
     (mecanica/electrica/otro), prioridad, rango de fechas (fecha_desde/fecha_hasta, por
     dia) y `q` (texto libre: busca en descripcion, quien reporto, tipo de falla y nombre
     del equipo). El total que cumple los filtros (ignorando skip/limit) va en el header
@@ -137,6 +138,7 @@ def listar_incidencias(
     filtros = dict(
         estado=estado,
         equipo_id=equipo_id,
+        sucursal_id=sucursal_id,
         categoria=categoria,
         prioridad=prioridad,
         fecha_desde=fecha_desde,

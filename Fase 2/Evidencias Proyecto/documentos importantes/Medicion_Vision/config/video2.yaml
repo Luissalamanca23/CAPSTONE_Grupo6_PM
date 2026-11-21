@@ -1,0 +1,44 @@
+# Gimnasio comercial lleno, camara fija en tripode a la altura del pecho (1920x1080).
+# Video de prueba: "1 HOUR INSIDE A REAL GYM | FIXED CAMERA" (YouTube rayH_WiIAi0), toma
+# fija mas larga (43:20 -> 57:55 del original), recortada a 30 fps. Ver README.md.
+#
+# Es el caso dificil: la camara no esta elevada, asi que quien camina por delante tapa las
+# maquinas, y hay mucha gente al fondo que no esta usando ninguna maquina de interes.
+
+camara:
+  codigo: CAM-GYM-01
+  nombre: Sala de musculacion (demo)
+  sucursal_codigo: PM-01
+  zona_nombre: Cardio          # la zona que trae seed.sql; en un gimnasio real seria "Musculacion"
+
+modelo:
+  pesos: yolo26s.pt
+  nombre: gymkeep-usage-detector
+  version: 0.1.0
+  imgsz: 1280
+
+parametros:
+  t_on_s: 30                   # MP-45
+  t_off_s: 90                  # MP-46
+  confianza_min: 0.25          # igual que el video de calibracion
+  gracia_s: 10
+  heartbeat_s: 60
+  intervalo_analisis_s: 0.2
+  criterio_zona: pie
+
+resolucion_referencia: [1920, 1080]
+
+privacidad:
+  difuminar_personas: true
+
+# ROI = donde apoya los pies (centro inferior de su caja) quien USA la maquina. Quien esta
+# de pie al lado de la maquina, conversando o esperando, queda fuera.
+maquinas:
+  - nombre: Remo sentado
+    codigo_activo: EQ-RS-01
+    categoria: FUERZA_GUIADA
+    roi: [[455, 560], [850, 545], [875, 780], [470, 790]]
+  - nombre: Maquina amarilla
+    codigo_activo: EQ-MA-01
+    categoria: FUERZA_GUIADA
+    roi: [[1470, 320], [1790, 320], [1795, 450], [1470, 450]]

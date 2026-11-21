@@ -1,0 +1,5 @@
+maquina,codigo_activo,equipo_id,inicio,fin,t_inicio_s,t_fin_s,duracion_s,duracion,presencia_s,pausas,pausa_max_s,personas_max,confianza_promedio,cierre
+Trotadora 01,EQ-TR-01,,2013-09-06T10:26:35-04:00,2013-09-06T10:33:11-04:00,550.1,946.9,396.7,06:37,21.6,9,21.4,1,0.344,ausencia
+Trotadora 02,EQ-TR-02,,2013-09-06T10:20:07-04:00,2013-09-06T10:42:17-04:00,162.1,1492.3,1330.3,22:10,974.8,0,0.0,1,0.477,ausencia
+Trotadora 03,EQ-TR-03,,2013-09-06T10:17:25-04:00,2013-09-06T10:33:43-04:00,0.2,978.2,978.0,16:18,642.6,0,0.0,1,0.442,ausencia
+Trotadora 03,EQ-TR-03,,2013-09-06T10:45:12-04:00,2013-09-06T10:47:24-04:00,1667.7,1799.0,131.3,02:11,20.8,1,11.1,2,0.367,fin_de_video

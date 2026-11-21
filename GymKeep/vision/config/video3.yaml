@@ -1,0 +1,35 @@
+# Video 3: tramo A de la grabacion completa de 1 hora del gimnasio (7 min 26 s, camara estable).
+# Mismos parametros que los videos 1 y 2 (ver el informe, resultado del OE3).
+camara:
+  codigo: CAM-GYM-02
+  nombre: Sala de musculacion 2 (demo)
+  sucursal_codigo: PM-01
+  zona_nombre: Musculacion
+
+modelo:
+  pesos: yolo26s.pt
+  imgsz: 640
+
+escala_tiempo: 1.0
+
+parametros:
+  t_on_s: 30
+  t_off_s: 90
+  confianza_min: 0.25
+  gracia_s: 10
+  criterio_zona: pie
+
+resolucion_referencia: [1920, 1080]
+
+privacidad:
+  difuminar_personas: true
+
+# ROI = zona donde apoyan los pies quienes USAN la maquina. Solo van las maquinas que quedan
+# completas dentro del cuadro (las demas estan cortadas por el borde izquierdo, derecho o superior).
+maquinas:
+  - nombre: Remo sentado
+    codigo_activo: EQ-RS-02
+    roi: [[520, 500], [945, 520], [945, 700], [540, 700]]
+  - nombre: Banco ajustable
+    codigo_activo: EQ-BA-01
+    roi: [[725, 330], [885, 330], [885, 470], [725, 470]]

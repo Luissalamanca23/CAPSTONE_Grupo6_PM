@@ -2,7 +2,7 @@
 param([switch]$BorrarDatos)
 $ErrorActionPreference = 'Continue'
 Set-Location $PSScriptRoot
-# Con el archivo de camaras se apaga todo (incluye al de la demo normal).
+# Con el archivo de camaras se apaga todo (incluye al de la demo normal y las 3 camaras).
 $Compose = Join-Path $PSScriptRoot 'docker-compose.vision.yml'
 
 $ts = (Get-Command tailscale -ErrorAction SilentlyContinue).Source
@@ -13,5 +13,5 @@ if (-not $ts) {
 }
 if ($ts) { Write-Host '==> Quitando la publicacion (Funnel)'; & $ts funnel reset }
 Write-Host '==> Apagando el sistema'
-if ($BorrarDatos) { & docker compose -f $Compose down -v; Remove-Item (Join-Path $PSScriptRoot '.datos-reales') -ErrorAction SilentlyContinue } else { & docker compose -f $Compose down }
+if ($BorrarDatos) { & docker compose -f $Compose --profile tres down -v; Remove-Item (Join-Path $PSScriptRoot '.datos-reales') -ErrorAction SilentlyContinue } else { & docker compose -f $Compose --profile tres down }
 Write-Host 'Listo.'
